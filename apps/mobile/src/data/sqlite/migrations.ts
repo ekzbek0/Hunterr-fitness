@@ -171,6 +171,25 @@ export const MIGRATIONS: readonly { version: number; sql: string }[] = [
       );
     `,
   },
+  {
+    // M3: rest-timer clock policy, optional measurements, local settings. Additive only.
+    version: 4,
+    sql: `
+      ALTER TABLE workout_session ADD COLUMN rest_last_seen_at TEXT;
+      ALTER TABLE workout_session ADD COLUMN rest_uncertain INTEGER NOT NULL DEFAULT 0;
+      CREATE TABLE measurement (
+        id TEXT PRIMARY KEY NOT NULL,
+        type TEXT NOT NULL CHECK (type IN ('body-weight','waist','chest','hip','arm','thigh')),
+        value REAL NOT NULL CHECK (value > 0),
+        unit TEXT NOT NULL CHECK (unit IN ('kg','lb','cm','in')),
+        measured_on TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        deleted_at TEXT
+      );
+      CREATE INDEX measurement_type_date ON measurement(type, measured_on);
+      CREATE TABLE app_setting (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

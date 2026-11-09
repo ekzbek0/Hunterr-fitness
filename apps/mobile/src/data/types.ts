@@ -110,6 +110,10 @@ export interface WorkoutSession {
   /** M2 rest timer: start timestamp + chosen duration; remaining time is derived from the clock. */
   restStartedAt: string | null;
   restDurationS: number | null;
+  /** M3: latest clock reading seen while resting (high-water mark). */
+  restLastSeenAt: string | null;
+  /** M3: a backwards clock change was seen; elapsed rest time is unknown. */
+  restUncertain: boolean;
 }
 
 export interface SetLog {
@@ -185,6 +189,49 @@ export interface EquipmentIncrement {
   confirmedAt: string;
 }
 
+/** M3: optional dated body measurement. No photos, no appearance scores. */
+export type MeasurementType = 'body-weight' | 'waist' | 'chest' | 'hip' | 'arm' | 'thigh';
+export type MeasurementUnit = 'kg' | 'lb' | 'cm' | 'in';
+export interface Measurement {
+  id: string;
+  type: MeasurementType;
+  value: number;
+  unit: MeasurementUnit;
+  /** Local date the user measured on (YYYY-MM-DD). */
+  measuredOn: string;
+  recordedAt: string;
+  /** Tombstone: deleted entries stay hidden and are never resurrected by a restore of this database. */
+  deletedAt: string | null;
+}
+
+/** M3: local preferences. Reminders and speech are off until the user turns them on. */
+export interface AppSettings {
+  speechEnabled: boolean;
+  reminders: { enabled: boolean; times: string[] };
+}
+
+export const DEFAULT_SETTINGS: AppSettings = { speechEnabled: true, reminders: { enabled: false, times: [] } };
+
+/** Every persisted record, as exported/restored by the backup feature. */
+export interface BackupData {
+  profile: Profile | null;
+  taskDays: TaskDay[];
+  slots: QuestSlot[];
+  checkins: DailyCheckin[];
+  ledger: LedgerEntry[];
+  trainingProfile: TrainingProfile | null;
+  plans: PlanVersion[];
+  moves: ScheduleMove[];
+  sessions: WorkoutSession[];
+  sets: SetLog[];
+  weeklyCycles: WeeklyCycle[];
+  weeklyReviews: WeeklyReview[];
+  proposals: ProgressionProposal[];
+  increments: EquipmentIncrement[];
+  measurements: Measurement[];
+  settings: AppSettings;
+}
+
 /** Primitive operations available inside one atomic transaction. */
 export interface StoreTx {
   getProfile(): Promise<Profile | null>;
@@ -221,7 +268,27 @@ export interface StoreTx {
   updateSession(s: WorkoutSession): Promise<void>;
   /** Sessions whose schedule slot belongs to the given week. */
   listSessionsForWeek(weekStart: string): Promise<WorkoutSession[]>;
-  setRestTimer(sessionId: string, startedAt: string | null, durationS: number | null): Promise<void>;
+  /** Sets (or clears with null) the rest timer fields of a session. */
+  setRestTimer(
+    sessionId: string,
+    rest: { startedAt: string; durationS: number; lastSeenAt: string | null; uncertain: boolean } | null,
+  ): Promise<void>;
+  /** Finished sessions, newest first (M3 progress view). */
+  listFinishedSessions(limit: number): Promise<WorkoutSession[]>;
+  /** All sets of the given sessions. */
+  listSetsForSessions(sessionIds: string[]): Promise<SetLog[]>;
+
+  listMeasurements(): Promise<Measurement[]>;
+  insertMeasurement(m: Measurement): Promise<void>;
+  /** Tombstones a measurement (sets deletedAt once). */
+  deleteMeasurement(id: string, deletedAt: string): Promise<void>;
+  getSettings(): Promise<AppSettings>;
+  putSettings(s: AppSettings): Promise<void>;
+
+  /** Reads every record (backup export). */
+  dumpAll(): Promise<BackupData>;
+  /** Replaces ALL local records with `data` inside this transaction (restore / delete all). */
+  replaceAll(data: BackupData): Promise<void>;
   listRecentSessions(limit: number): Promise<WorkoutSession[]>;
 
   listSets(sessionId: string): Promise<SetLog[]>;

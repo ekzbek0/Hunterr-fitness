@@ -248,6 +248,12 @@ function Training() {
           onClearRest={async () => {
             await run(() => service.clearRest(sessionId));
           }}
+          onRestCheckpoint={async (rollback) => {
+            // Periodic high-water mark: written directly, no screen reload. A detected
+            // backwards clock change is persisted and the screen reloaded once.
+            if (rollback) await act(() => service.checkpointRest(sessionId, true));
+            else await service.checkpointRest(sessionId).catch(() => undefined);
+          }}
           onAbandon={async () => {
             const r = await run(() => service.abandonWorkout(sessionId));
             setMessage(r?.status === 'ok' ? 'Antrenman bırakıldı. Kaydedilen setler saklandı; ceza veya borç yok.' : r ? rejectText(r) : null);

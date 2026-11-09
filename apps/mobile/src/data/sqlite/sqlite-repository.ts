@@ -5,6 +5,7 @@ import type { Program } from '@/domain/training/program';
 import type { TriState } from '@/domain/training/readiness';
 import type { LoadUnit, SetKind } from '@/domain/training/workout';
 
+import { DEFAULT_SETTINGS } from '../types';
 import type {
   AvciRepository,
   DailyCheckin,
@@ -16,6 +17,9 @@ import type {
   ScopeKind,
   EquipmentIncrement,
   ProgressionProposal,
+  AppSettings,
+  BackupData,
+  Measurement,
   SetLog,
   WeeklyCycle,
   WeeklyReview,
@@ -137,6 +141,17 @@ const toSession = (r: Row): WorkoutSession => ({
   version: num(r.version),
   restStartedAt: optStr(r.rest_started_at),
   restDurationS: r.rest_duration_s === null || r.rest_duration_s === undefined ? null : num(r.rest_duration_s),
+  restLastSeenAt: optStr(r.rest_last_seen_at),
+  restUncertain: num(r.rest_uncertain ?? 0) === 1,
+});
+const toMeasurement = (r: Row): Measurement => ({
+  id: str(r.id),
+  type: str(r.type) as Measurement['type'],
+  value: num(r.value),
+  unit: str(r.unit) as Measurement['unit'],
+  measuredOn: str(r.measured_on),
+  recordedAt: str(r.recorded_at),
+  deletedAt: optStr(r.deleted_at),
 });
 const toSet = (r: Row): SetLog => ({
   id: str(r.id),
@@ -309,10 +324,11 @@ function sqlTx(d: SqlDriver): StoreTx {
     async insertSession(s) {
       await d.run(
         `INSERT INTO workout_session (id, task_day_id, schedule_slot_id, plan_version_id, program_day_id, title, exercises,
-           started_at, finished_at, status, version, rest_started_at, rest_duration_s)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           started_at, finished_at, status, version, rest_started_at, rest_duration_s, rest_last_seen_at, rest_uncertain)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [s.id, s.taskDayId, s.scheduleSlotId, s.planVersionId, s.programDayId, s.title, JSON.stringify(s.exercises),
-          s.startedAt, s.finishedAt, s.status, s.version, s.restStartedAt, s.restDurationS],
+          s.startedAt, s.finishedAt, s.status, s.version, s.restStartedAt, s.restDurationS, s.restLastSeenAt,
+          s.restUncertain ? 1 : 0],
       );
     },
     async updateSession(s) {
@@ -331,8 +347,108 @@ function sqlTx(d: SqlDriver): StoreTx {
       );
       return rows.map(toSession);
     },
-    async setRestTimer(sessionId, startedAt, durationS) {
-      await d.run('UPDATE workout_session SET rest_started_at = ?, rest_duration_s = ? WHERE id = ?', [startedAt, durationS, sessionId]);
+    async setRestTimer(sessionId, rest) {
+      await d.run(
+        'UPDATE workout_session SET rest_started_at = ?, rest_duration_s = ?, rest_last_seen_at = ?, rest_uncertain = ? WHERE id = ?',
+        [rest?.startedAt ?? null, rest?.durationS ?? null, rest?.lastSeenAt ?? null, rest?.uncertain ? 1 : 0, sessionId],
+      );
+    },
+    async listFinishedSessions(limit) {
+      const rows = await d.all<Row>(
+        "SELECT * FROM workout_session WHERE status = 'finished' ORDER BY started_at DESC, rowid DESC LIMIT ?",
+        [limit],
+      );
+      return rows.map(toSession);
+    },
+    async listSetsForSessions(ids) {
+      if (ids.length === 0) return [];
+      const out: SetLog[] = [];
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200);
+        const rows = await d.all<Row>(
+          `SELECT * FROM set_log WHERE session_id IN (${chunk.map(() => '?').join(',')}) ORDER BY session_id, position`,
+          chunk,
+        );
+        out.push(...rows.map(toSet));
+      }
+      return out;
+    },
+    async listMeasurements() {
+      const rows = await d.all<Row>('SELECT * FROM measurement ORDER BY measured_on DESC, recorded_at DESC');
+      return rows.map(toMeasurement);
+    },
+    async insertMeasurement(m) {
+      await d.run(
+        'INSERT INTO measurement (id, type, value, unit, measured_on, recorded_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [m.id, m.type, m.value, m.unit, m.measuredOn, m.recordedAt, m.deletedAt],
+      );
+    },
+    async deleteMeasurement(id, deletedAt) {
+      await d.run('UPDATE measurement SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', [deletedAt, id]);
+    },
+    async getSettings() {
+      const r = await d.first<Row>("SELECT value FROM app_setting WHERE key = 'settings'");
+      return r ? ({ ...DEFAULT_SETTINGS, ...(JSON.parse(str(r.value)) as AppSettings) }) : structuredClone(DEFAULT_SETTINGS);
+    },
+    async putSettings(v) {
+      await d.run(
+        "INSERT INTO app_setting (key, value) VALUES ('settings', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [JSON.stringify(v)],
+      );
+    },
+    async dumpAll(): Promise<BackupData> {
+      const all = async <T>(sql: string, map: (r: Row) => T) => (await d.all<Row>(sql)).map(map);
+      const profile = await d.first<Row>('SELECT * FROM profile LIMIT 1');
+      const tp = await d.first<Row>('SELECT * FROM training_profile LIMIT 1');
+      const settingsRow = await d.first<Row>("SELECT value FROM app_setting WHERE key = 'settings'");
+      return {
+        profile: profile ? toProfile(profile) : null,
+        taskDays: await all('SELECT * FROM task_day ORDER BY sequence', toDay),
+        slots: await all('SELECT * FROM quest_slot ORDER BY rowid', toSlot),
+        checkins: await all('SELECT * FROM daily_checkin ORDER BY rowid', toCheckin),
+        ledger: await all('SELECT * FROM xp_ledger ORDER BY rowid', toLedger),
+        trainingProfile: tp ? toTrainingProfile(tp) : null,
+        plans: await all('SELECT * FROM plan_version ORDER BY sequence', toPlan),
+        moves: await all('SELECT * FROM schedule_move ORDER BY rowid', toMove),
+        sessions: await all('SELECT * FROM workout_session ORDER BY rowid', toSession),
+        sets: await all('SELECT * FROM set_log ORDER BY rowid', toSet),
+        weeklyCycles: await all('SELECT * FROM weekly_cycle ORDER BY sequence', toCycle),
+        weeklyReviews: await all('SELECT * FROM weekly_review ORDER BY rowid', toReview),
+        proposals: await all('SELECT * FROM progression_proposal ORDER BY rowid', toProposal),
+        increments: await all('SELECT * FROM equipment_increment ORDER BY rowid', toIncrement),
+        measurements: await all('SELECT * FROM measurement ORDER BY rowid', toMeasurement),
+        settings: settingsRow
+          ? { ...DEFAULT_SETTINGS, ...(JSON.parse(str(settingsRow.value)) as AppSettings) }
+          : structuredClone(DEFAULT_SETTINGS),
+      };
+    },
+    async replaceAll(data) {
+      // Children first (foreign keys), all inside the caller's transaction.
+      for (const t of ['set_log', 'progression_proposal', 'weekly_review', 'workout_session', 'schedule_move', 'quest_slot',
+        'daily_checkin', 'xp_ledger', 'plan_version', 'training_profile', 'weekly_cycle', 'equipment_increment',
+        'measurement', 'app_setting', 'task_day', 'profile']) {
+        await d.run(`DELETE FROM ${t}`);
+      }
+      const self = sqlTx(d);
+      if (data.profile) await self.putProfile(data.profile);
+      for (const x of data.taskDays) await self.insertTaskDay(x);
+      for (const x of data.slots) await self.insertSlot(x);
+      for (const x of data.checkins) await self.putCheckin(x);
+      if (data.trainingProfile) await self.putTrainingProfile(data.trainingProfile);
+      // Parents before children (plan_version.parent_id references plan_version).
+      for (const x of [...data.plans].sort((a, b) => a.sequence - b.sequence)) await self.insertPlan(x);
+      for (const x of data.moves) await self.putMove(x);
+      for (const x of data.sessions) await self.insertSession(x);
+      for (const x of data.sets) await self.insertSet(x);
+      for (const x of [...data.weeklyCycles].sort((a, b) => a.sequence - b.sequence)) await self.insertWeeklyCycle(x);
+      for (const x of data.weeklyReviews) await self.insertWeeklyReview(x);
+      for (const x of data.proposals) await self.insertProposal(x);
+      for (const x of data.increments) await self.putIncrement(x);
+      for (const x of data.measurements) await self.insertMeasurement(x);
+      for (const x of data.ledger) {
+        if ((await self.insertLedger(x)) === 'conflict') throw new Error('UNIQUE constraint failed: xp_ledger');
+      }
+      await self.putSettings(data.settings);
     },
     async getLatestWeeklyCycle() {
       const r = await d.first<Row>('SELECT * FROM weekly_cycle ORDER BY sequence DESC LIMIT 1');

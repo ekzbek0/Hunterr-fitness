@@ -140,7 +140,7 @@ describe('IndexedDB document v2 (M1) -> v3 (M2)', () => {
     const stored = await indexedDbStorage(factory, 'avci').load();
     expect(stored!.doc.schemaVersion).toBe(DOCUMENT_SCHEMA_VERSION);
     expect(stored!.doc.sets).toHaveLength(1);
-    expect(stored!.doc.sessions[0]).toMatchObject({ restStartedAt: null, restDurationS: null });
+    expect(stored!.doc.sessions[0]).toMatchObject({ restStartedAt: null, restDurationS: null, restUncertain: false });
     expect(stored!.doc.weeklyCycles).toHaveLength(1);
   });
 });

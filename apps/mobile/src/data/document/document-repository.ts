@@ -5,7 +5,11 @@
  * single storage commit, so partial writes are impossible. Another tab that
  * committed meanwhile forces a retry against fresh data.
  */
+import { DEFAULT_SETTINGS } from '../types';
 import type {
+  AppSettings,
+  BackupData,
+  Measurement,
   AvciRepository,
   DailyCheckin,
   EquipmentIncrement,
@@ -24,7 +28,7 @@ import type {
   WorkoutSession,
 } from '../types';
 
-export const DOCUMENT_SCHEMA_VERSION = 3;
+export const DOCUMENT_SCHEMA_VERSION = 4;
 
 export interface AvciDocument {
   schemaVersion: number;
@@ -44,6 +48,9 @@ export interface AvciDocument {
   weeklyReviews: WeeklyReview[];
   proposals: ProgressionProposal[];
   increments: EquipmentIncrement[];
+  // v4 (M3)
+  measurements: Measurement[];
+  settings: AppSettings;
 }
 
 export interface StoredDocument {
@@ -75,6 +82,8 @@ export function emptyDocument(): AvciDocument {
     weeklyReviews: [],
     proposals: [],
     increments: [],
+    measurements: [],
+    settings: structuredClone(DEFAULT_SETTINGS),
   };
 }
 
@@ -106,6 +115,13 @@ export function migrateDocument(input: AvciDocument): AvciDocument {
     doc.proposals = [];
     doc.increments = [];
     doc.schemaVersion = 3;
+  }
+  if (doc.schemaVersion === 3) {
+    // M2 -> M3: additive. Rest timers gain the clock-policy fields.
+    doc.sessions = doc.sessions.map((x) => ({ ...x, restLastSeenAt: x.restLastSeenAt ?? null, restUncertain: x.restUncertain ?? false }));
+    doc.measurements = [];
+    doc.settings = structuredClone(DEFAULT_SETTINGS);
+    doc.schemaVersion = 4;
   }
   return doc;
 }
@@ -221,9 +237,51 @@ function docTx(doc: AvciDocument): StoreTx {
           .filter((s) => s.scheduleSlotId?.startsWith(`${weekStart}:`))
           .sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
       ),
-    setRestTimer: async (sessionId, startedAt, durationS) => {
+    setRestTimer: async (sessionId, rest) => {
       const x = doc.sessions.find((y) => y.id === sessionId);
-      if (x) Object.assign(x, { restStartedAt: startedAt, restDurationS: durationS });
+      if (x) {
+        Object.assign(x, {
+          restStartedAt: rest?.startedAt ?? null,
+          restDurationS: rest?.durationS ?? null,
+          restLastSeenAt: rest?.lastSeenAt ?? null,
+          restUncertain: rest?.uncertain ?? false,
+        });
+      }
+    },
+    listFinishedSessions: async (limit) =>
+      clone(
+        doc.sessions
+          .map((s, i) => ({ s, i }))
+          .filter((x) => x.s.status === 'finished')
+          .sort((a, b) => b.s.startedAt.localeCompare(a.s.startedAt) || b.i - a.i)
+          .slice(0, limit)
+          .map((x) => x.s),
+      ),
+    listSetsForSessions: async (ids) => {
+      const want = new Set(ids);
+      return clone(doc.sets.filter((x) => want.has(x.sessionId)).sort((a, b) => a.sessionId.localeCompare(b.sessionId) || a.position - b.position));
+    },
+    listMeasurements: async () =>
+      clone([...doc.measurements].sort((a, b) => b.measuredOn.localeCompare(a.measuredOn) || b.recordedAt.localeCompare(a.recordedAt))),
+    insertMeasurement: async (m) => {
+      if (doc.measurements.some((x) => x.id === m.id)) throw new Error('UNIQUE constraint failed: measurement.id');
+      doc.measurements.push(clone(m));
+    },
+    deleteMeasurement: async (id, deletedAt) => {
+      const m = doc.measurements.find((x) => x.id === id);
+      if (m && m.deletedAt === null) m.deletedAt = deletedAt;
+    },
+    getSettings: async () => clone({ ...DEFAULT_SETTINGS, ...doc.settings }),
+    putSettings: async (v) => {
+      doc.settings = clone(v);
+    },
+    dumpAll: async () => {
+      const { schemaVersion: _v, ...rest } = clone(doc);
+      return rest as BackupData;
+    },
+    replaceAll: async (data) => {
+      const next = clone(data);
+      Object.assign(doc, next, { schemaVersion: DOCUMENT_SCHEMA_VERSION });
     },
     getLatestWeeklyCycle: async () => {
       const c = [...doc.weeklyCycles].sort((a, b) => b.sequence - a.sequence)[0];

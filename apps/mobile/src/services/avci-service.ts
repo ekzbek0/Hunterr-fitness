@@ -42,7 +42,7 @@ import {
   type ProgressionDecision,
   type SessionEvidence,
 } from '@/domain/training/progression';
-import { validateRestDuration } from '@/domain/training/rest';
+import { isClockRollback, validateRestDuration } from '@/domain/training/rest';
 import {
   diffPrograms,
   generateProgram,
@@ -334,7 +334,9 @@ export class AvciService {
         }
       }
       const view = today && plan ? await this.weekView(tx, plan, today) : null;
-      const activeSession = await tx.getActiveSession();
+      const storedActive = await tx.getActiveSession();
+      // Every open of the workout checkpoints the rest timer against the clock policy.
+      const activeSession = storedActive ? await this.checkpointRestInTx(tx, storedActive) : null;
       const active = activeSession ? await this.activeWorkout(tx, activeSession) : null;
       const exerciseIds = new Set<string>();
       for (const e of active?.session.exercises ?? []) exerciseIds.add(e.exerciseId);
@@ -553,6 +555,8 @@ export class AvciService {
         version: 1,
         restStartedAt: null,
         restDurationS: null,
+        restLastSeenAt: null,
+        restUncertain: false,
       };
       await tx.insertSession(session);
       return { status: 'ok', value: session };
@@ -656,7 +660,7 @@ export class AvciService {
         version: session.version + 1,
       };
       await tx.updateSession(finished);
-      await tx.setRestTimer(finished.id, null, null);
+      await tx.setRestTimer(finished.id, null);
       return { status: 'ok', value: { session: finished, reward: await this.rewardForSession(tx, profile, finished) } };
     });
   }
@@ -670,7 +674,7 @@ export class AvciService {
       const next: WorkoutSession = { ...session, status: 'abandoned', finishedAt: this.clock.now().toISOString(),
         version: session.version + 1 };
       await tx.updateSession(next);
-      await tx.setRestTimer(next.id, null, null);
+      await tx.setRestTimer(next.id, null);
       return { status: 'ok', value: next };
     });
   }
@@ -689,17 +693,55 @@ export class AvciService {
       if (!session) return { status: 'rejected', reason: 'unknown-session' };
       if (session.status !== 'in-progress') return { status: 'rejected', reason: 'not-in-progress' };
       const startedAt = this.clock.now().toISOString();
-      await tx.setRestTimer(sessionId, startedAt, durationS);
-      return { status: 'ok', value: { ...session, restStartedAt: startedAt, restDurationS: durationS } };
+      await tx.setRestTimer(sessionId, { startedAt, durationS, lastSeenAt: startedAt, uncertain: false });
+      return {
+        status: 'ok',
+        value: { ...session, restStartedAt: startedAt, restDurationS: durationS, restLastSeenAt: startedAt, restUncertain: false },
+      };
     });
   }
 
   async clearRest(sessionId: string): Promise<TrainingResult<null>> {
     return this.repo.transaction(async (tx) => {
       if (!(await tx.getSession(sessionId))) return { status: 'rejected', reason: 'unknown-session' };
-      await tx.setRestTimer(sessionId, null, null);
+      await tx.setRestTimer(sessionId, null);
       return { status: 'ok', value: null };
     });
+  }
+
+  /**
+   * Records the clock reading for a running rest timer (high-water mark), or marks it
+   * uncertain when the clock moved backwards (here or as seen by the UI). Never extends it.
+   */
+  async checkpointRest(sessionId: string, observedRollback = false): Promise<TrainingResult<WorkoutSession>> {
+    return this.repo.transaction(async (tx) => {
+      const session = await tx.getSession(sessionId);
+      if (!session) return { status: 'rejected', reason: 'unknown-session' };
+      return { status: 'ok', value: await this.checkpointRestInTx(tx, session, observedRollback) };
+    });
+  }
+
+  private async checkpointRestInTx(tx: StoreTx, session: WorkoutSession, observedRollback = false): Promise<WorkoutSession> {
+    if (session.status !== 'in-progress' || !session.restStartedAt || session.restDurationS === null || session.restUncertain) {
+      return session;
+    }
+    const timer = {
+      startedAt: session.restStartedAt,
+      durationS: session.restDurationS,
+      lastSeenAt: session.restLastSeenAt,
+      uncertain: false,
+    };
+    const now = this.clock.now();
+    if (observedRollback || isClockRollback(timer, now.getTime())) {
+      await tx.setRestTimer(session.id, { ...timer, uncertain: true });
+      return { ...session, restUncertain: true };
+    }
+    const nowIso = now.toISOString();
+    if (!timer.lastSeenAt || nowIso > timer.lastSeenAt) {
+      await tx.setRestTimer(session.id, { ...timer, lastSeenAt: nowIso });
+      return { ...session, restLastSeenAt: nowIso };
+    }
+    return session;
   }
 
   // ---- M2: weekly review, progression proposals, equipment increments ----

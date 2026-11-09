@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AppState, Text, View } from 'react-native';
 
-import type { SetLog } from '@/data/types';
+import type { SetLog, WorkoutSession } from '@/data/types';
 import { exerciseById } from '@/domain/training/catalog';
 import type { LoadTarget } from '@/domain/training/program';
-import { formatRest, REST_PRESETS_S, restRemainingSeconds } from '@/domain/training/rest';
+import { CLOCK_TOLERANCE_MS, formatRest, REST_PRESETS_S, restView, type RestTimer as RestTimerState } from '@/domain/training/rest';
 import { addDays } from '@/domain/training/schedule';
 import type { PlannedSession } from '@/domain/training/schedule';
 import { parseDecimal, type LoadUnit, type SetInput, type SetKind } from '@/domain/training/workout';
@@ -181,49 +181,91 @@ function SetForm({
   );
 }
 
+/** How often a running timer persists its clock high-water mark (and on going to background). */
+const REST_CHECKPOINT_MS = 5000;
+
 /**
  * Rest countdown derived from the stored start timestamp: correct after the
  * app was backgrounded, killed or reloaded. Ticks once per second, no animation.
+ * A backwards clock change makes it "uncertain" (see domain/training/rest.ts):
+ * it never shows a longer time and never claims to know the elapsed time.
  */
 export function RestTimer({
-  startedAt,
-  durationS,
+  session,
   busy,
   onStart,
   onClear,
+  onCheckpoint,
 }: {
-  startedAt: string | null;
-  durationS: number | null;
+  session: Pick<WorkoutSession, 'restStartedAt' | 'restDurationS' | 'restLastSeenAt' | 'restUncertain'>;
   busy: boolean;
   onStart: (seconds: number) => void;
   onClear: () => void;
+  /** Persist the high-water mark; `rollback` = this screen saw the clock go backwards. */
+  onCheckpoint: (rollback: boolean) => void;
 }) {
-  const timer = startedAt && durationS ? { startedAt, durationS } : null;
-  const [now, setNow] = useState(() => Date.now());
+  const timer: RestTimerState | null =
+    session.restStartedAt && session.restDurationS
+      ? {
+          startedAt: session.restStartedAt,
+          durationS: session.restDurationS,
+          lastSeenAt: session.restLastSeenAt,
+          uncertain: session.restUncertain,
+        }
+      : null;
+  // `max` = latest reading this screen saw that was not itself a backwards step.
+  const [clock, setClock] = useState(() => ({ now: Date.now(), max: null as number | null }));
+  const reported = useRef(false);
+  const key = `${timer?.startedAt}|${timer?.durationS}|${timer?.uncertain}`;
   useEffect(() => {
-    if (!timer) return;
-    const first = setTimeout(() => setNow(Date.now()), 0);
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    const sub = AppState.addEventListener('change', (st) => st === 'active' && setNow(Date.now()));
+    reported.current = false;
+    if (!timer || timer.uncertain) return;
+    const tick = () => {
+      const t = Date.now();
+      setClock((c) => ({ now: t, max: c.max === null || t >= c.max - CLOCK_TOLERANCE_MS ? Math.max(c.max ?? t, t) : c.max }));
+    };
+    const first = setTimeout(() => setClock({ now: Date.now(), max: null }), 0);
+    const id = setInterval(tick, 1000);
+    const save = setInterval(() => onCheckpoint(false), REST_CHECKPOINT_MS);
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') tick();
+      else onCheckpoint(false);
+    });
     return () => {
       clearTimeout(first);
       clearInterval(id);
+      clearInterval(save);
       sub.remove();
     };
-  }, [timer?.startedAt, timer?.durationS]); // eslint-disable-line react-hooks/exhaustive-deps
-  const remaining = restRemainingSeconds(timer, now);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const view = restView(timer, clock.now, clock.max);
+  useEffect(() => {
+    if (view.state === 'uncertain' && timer && !timer.uncertain && !reported.current) {
+      reported.current = true;
+      onCheckpoint(true);
+    }
+  });
   return (
-    <Card accent={C.recovery}>
+    <Card accent={view.state === 'uncertain' ? C.warning : C.recovery}>
       <Text style={T.h3}>Dinlenme</Text>
-      {timer ? (
-        <Text
-          style={[T.h2, { color: remaining === 0 ? C.success : C.text }]}
-          testID="rest-remaining"
-          accessibilityLiveRegion={remaining === 0 ? 'polite' : 'none'}>
-          {remaining === 0 ? 'Dinlenme bitti' : `Kalan ${formatRest(remaining)}`}
-        </Text>
-      ) : (
+      {view.state === 'off' && (
         <Text style={T.muted}>Sayaç kapalı. Süre seç; kalan süre başlangıç zamanından hesaplanır.</Text>
+      )}
+      {view.state === 'running' && (
+        <Text style={T.h2} testID="rest-remaining">
+          Kalan {formatRest(view.remainingS)}
+        </Text>
+      )}
+      {view.state === 'done' && (
+        <Text style={[T.h2, { color: C.success }]} testID="rest-remaining" accessibilityLiveRegion="polite">
+          Dinlenme bitti
+        </Text>
+      )}
+      {view.state === 'uncertain' && (
+        <Text style={T.body} testID="rest-remaining" accessibilityLiveRegion="polite">
+          Cihaz saati geri alındı; geçen süre kesin bilinmiyor, bu yüzden kalan süre gösterilmiyor. Hazırsan devam et ya
+          da sayacı yeniden başlat.
+        </Text>
       )}
       <View style={T.row}>
         {REST_PRESETS_S.map((s) => (
@@ -249,10 +291,12 @@ export function WorkoutLogger({
   onAbandon,
   onStartRest,
   onClearRest,
+  onRestCheckpoint,
   notices,
 }: {
   onStartRest: (seconds: number) => void;
   onClearRest: () => void;
+  onRestCheckpoint: (rollback: boolean) => void;
   /** Safety/context notices shown above the log (illness, joint pain, previous day). */
   notices: string[];
   active: ActiveWorkout;
@@ -279,11 +323,11 @@ export function WorkoutLogger({
         </Text>
       </Card>
       <RestTimer
-        startedAt={session.restStartedAt}
-        durationS={session.restDurationS}
+        session={session}
         busy={busy}
         onStart={onStartRest}
         onClear={onClearRest}
+        onCheckpoint={onRestCheckpoint}
       />
       {notices.map((n) => (
         <Card key={n} accent={C.warning}>

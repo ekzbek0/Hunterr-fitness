@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AvciRepository } from '@/data/types';
 import type { Program } from '@/domain/training/program';
 import { DRAFT_TRAINING_PROFILE } from '@/domain/training/profile';
-import { restRemainingSeconds } from '@/domain/training/rest';
+import { restView } from '@/domain/training/rest';
 import type { SetInput } from '@/domain/training/workout';
 import { AvciService } from '@/services/avci-service';
 
@@ -383,6 +383,34 @@ describe.each(backends)('M1 fixes + M2 ($name)', (backend) => {
   });
 
   // ---------- M2 rest timer ----------
+  it('REGRESSION: clock set back during rest is persisted as uncertain and never extends the rest (restart too)', async () => {
+    await setup();
+    await checkin();
+    const t = await service.loadTraining();
+    const s = ok(await service.startWorkout(t.week.find((w) => w.date === '2026-11-09')!.slotId));
+    ok(await service.startRest(s.id, 90)); // at 07:00:00Z
+    clock.set('2026-11-09T07:01:00Z'); // 60 s passed: 30 s left
+    let a = (await service.loadTraining()).active!.session; // checkpoint +60 s
+    expect(a.restLastSeenAt).toBe('2026-11-09T07:01:00.000Z');
+    await restart(); // app killed
+    clock.set('2026-11-09T07:00:30Z'); // device clock moved back 30 s
+    a = (await service.loadTraining()).active!.session;
+    expect(a.restUncertain).toBe(true);
+    const view = (x: typeof a) =>
+      restView({ startedAt: x.restStartedAt!, durationS: x.restDurationS!, lastSeenAt: x.restLastSeenAt, uncertain: x.restUncertain }, clock.now().getTime());
+    expect(view(a)).toEqual({ state: 'uncertain' }); // not "60 s left"
+    clock.set('2026-11-09T07:01:05Z');
+    await restart();
+    a = (await service.loadTraining()).active!.session;
+    expect(view(a)).toEqual({ state: 'uncertain' }); // consistent after reopen
+    ok(await service.startRest(s.id, 60)); // the user restarts it explicitly
+    a = (await service.loadTraining()).active!.session;
+    expect(view(a)).toEqual({ state: 'running', remainingS: 60 });
+    // A rollback seen only by the UI is persisted the same way.
+    ok(await service.checkpointRest(s.id, true));
+    expect((await service.loadTraining()).active!.session.restUncertain).toBe(true);
+  });
+
   it('rest timer survives restart; remaining time comes from the stored timestamp', async () => {
     await setup();
     await checkin();
@@ -394,7 +422,8 @@ describe.each(backends)('M1 fixes + M2 ($name)', (backend) => {
     clock.set('2026-11-09T07:00:40Z');
     const active = (await service.loadTraining()).active!.session;
     expect(active.restDurationS).toBe(90);
-    expect(restRemainingSeconds({ startedAt: active.restStartedAt!, durationS: 90 }, clock.now().getTime())).toBe(50);
+    const timer = { startedAt: active.restStartedAt!, durationS: 90, lastSeenAt: active.restLastSeenAt, uncertain: active.restUncertain };
+    expect(restView(timer, clock.now().getTime())).toEqual({ state: 'running', remainingS: 50 });
     ok(await service.clearRest(s.id));
     expect((await service.loadTraining()).active!.session.restStartedAt).toBeNull();
     ok(await service.startRest(s.id, 60));

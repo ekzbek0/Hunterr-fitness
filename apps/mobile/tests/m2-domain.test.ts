@@ -18,7 +18,7 @@ import {
   type SessionEvidence,
 } from '@/domain/training/progression';
 import type { CheckinInput } from '@/domain/training/readiness';
-import { formatRest, restRemainingSeconds, validateRestDuration } from '@/domain/training/rest';
+import { formatRest, isClockRollback, restView, validateRestDuration, type RestTimer } from '@/domain/training/rest';
 import { buildWeek, findScheduleConflicts } from '@/domain/training/schedule';
 
 const facts = validateTrainingProfile(DRAFT_TRAINING_PROFILE);
@@ -248,16 +248,28 @@ describe('double progression proposal', () => {
 });
 
 describe('rest timer is derived from timestamps', () => {
-  const t = { startedAt: '2026-11-09T07:00:00.000Z', durationS: 90 };
+  const t: RestTimer = { startedAt: '2026-11-09T07:00:00.000Z', durationS: 90, lastSeenAt: null, uncertain: false };
   const at = (iso: string) => Date.parse(iso);
   it('counts down from the stored start, across background/restart', () => {
-    expect(restRemainingSeconds(t, at('2026-11-09T07:00:00.000Z'))).toBe(90);
-    expect(restRemainingSeconds(t, at('2026-11-09T07:00:30.200Z'))).toBe(60);
-    expect(restRemainingSeconds(t, at('2026-11-09T07:05:00.000Z'))).toBe(0);
-    expect(restRemainingSeconds(null, at('2026-11-09T07:00:00.000Z'))).toBe(0);
+    expect(restView(t, at('2026-11-09T07:00:00.000Z'))).toEqual({ state: 'running', remainingS: 90 });
+    expect(restView(t, at('2026-11-09T07:00:30.200Z'))).toEqual({ state: 'running', remainingS: 60 });
+    expect(restView(t, at('2026-11-09T07:05:00.000Z'))).toEqual({ state: 'done' });
+    expect(restView(null, at('2026-11-09T07:00:00.000Z'))).toEqual({ state: 'off' });
   });
-  it('clock moved back never extends beyond the duration', () => {
-    expect(restRemainingSeconds(t, at('2026-11-09T06:00:00.000Z'))).toBe(90);
+  it('REGRESSION: 90 s timer, 60 s passed (30 left), clock set back 30 s -> never 60 s again; uncertain', () => {
+    const seen: RestTimer = { ...t, lastSeenAt: '2026-11-09T07:01:00.000Z' }; // checkpoint at +60 s
+    expect(restView(seen, at('2026-11-09T07:01:00.000Z'))).toEqual({ state: 'running', remainingS: 30 });
+    expect(restView(seen, at('2026-11-09T07:00:30.000Z'))).toEqual({ state: 'uncertain' });
+    // Same rollback seen only by the running screen (no stored checkpoint yet).
+    expect(restView(t, at('2026-11-09T07:00:30.000Z'), at('2026-11-09T07:01:00.000Z'))).toEqual({ state: 'uncertain' });
+    expect(isClockRollback(seen, at('2026-11-09T07:00:30.000Z'))).toBe(true);
+    // Once uncertain, it stays uncertain even when the clock is moved forward again.
+    expect(restView({ ...seen, uncertain: true }, at('2026-11-09T07:01:10.000Z'))).toEqual({ state: 'uncertain' });
+  });
+  it('clock before the start is uncertain; small jitter is tolerated without extending', () => {
+    expect(restView(t, at('2026-11-09T06:00:00.000Z'))).toEqual({ state: 'uncertain' });
+    const seen: RestTimer = { ...t, lastSeenAt: '2026-11-09T07:01:00.000Z' };
+    expect(restView(seen, at('2026-11-09T07:00:59.000Z'))).toEqual({ state: 'running', remainingS: 30 });
   });
   it('validates durations and formats', () => {
     expect(validateRestDuration(90)).toBe(90);
