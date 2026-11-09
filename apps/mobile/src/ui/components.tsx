@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAvci } from './avci-context';
@@ -93,6 +93,58 @@ export function Chip({ label, selected, onPress }: { label: string; selected: bo
   );
 }
 
+export function Field({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  numeric,
+  width,
+  testID,
+  a11yLabel,
+}: {
+  label: string;
+  /** Screen-reader label when the visible label needs more context. */
+  a11yLabel?: string;
+  value: string;
+  onChangeText: (t: string) => void;
+  placeholder?: string;
+  numeric?: boolean;
+  width?: number;
+  testID?: string;
+}) {
+  return (
+    <View style={{ gap: 4, width }}>
+      <Text style={T.label}>{label}</Text>
+      <TextInput
+        accessibilityLabel={a11yLabel ?? label}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={C.textMuted}
+        keyboardType={numeric ? 'decimal-pad' : 'default'}
+        inputMode={numeric ? 'decimal' : 'text'}
+        style={styles.input}
+        testID={testID}
+      />
+    </View>
+  );
+}
+
+/** Multi-select chip (checkbox semantics) for equipment, days and limitations. */
+export function ToggleChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: selected }}
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={[styles.chip, selected && styles.chipSelected]}>
+      <Text style={[styles.chipText, selected && { color: C.onAccent }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export function XpBar({ fraction }: { fraction: number }) {
   const pct = Math.max(0, Math.min(1, fraction)) * 100;
   return (
@@ -134,6 +186,16 @@ const styles = StyleSheet.create({
   },
   chipSelected: { backgroundColor: C.accentStrong, borderColor: C.accent },
   chipText: { color: C.text, fontSize: 15 },
+  input: {
+    minHeight: MIN_TOUCH,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surfaceRaised,
+    color: C.text,
+    fontSize: 16,
+    paddingHorizontal: S.md,
+  },
   barTrack: { height: 10, borderRadius: 5, backgroundColor: C.surfaceRaised, overflow: 'hidden' },
   barFill: { height: '100%', backgroundColor: C.violet, borderRadius: 5 },
 });

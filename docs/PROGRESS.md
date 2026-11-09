@@ -1,8 +1,122 @@
 # Current progress
 
 ## Status
-M0 (kalıcı günlük görev → XP → yeniden açılışta korunma) web üzerinde çalışıyor
-ve test edildi. Native (iPhone) davranışı henüz gerçek cihazda sınanmadı.
+M0 ve M1 (antrenman profili, düzenlenebilir haftalık program, gün taşıma, set
+kaydı, yarıda kalan antrenmana devam, ana görev bağlantısı) web üzerinde çalışıyor
+ve test edildi. Native (iPhone) davranışı henüz gerçek cihazda SINANMADI.
+
+## 2026-11-09 / M0 düzeltmeleri + M1 / antrenman günlüğü
+
+Dal: `claude/project-thread-aoxh7c` (`claude/project-thread-t29swh` üzerine). main'e birleştirilmedi.
+
+### Oturum ve ajanlar
+- `.claude/agents` (7 avci-* ajanı) ve `.claude/skills` repoda var, ancak bu bulut oturumu
+  main dalından başladığı için (ajan dosyaları main'de yok) oturuma YÜKLENMEDİ; Agent
+  listesinde avci-* türü görünmedi. Uygulama ana oturumda yapıldı; inceleme için
+  avci-qa + avci-training tanımlarıyla genel amaçlı bir alt ajan çalıştırıldı (salt okuma).
+  Ajanların yerel kullanımı için oturumu bu daldan başlat.
+
+### M0 düzeltmeleri
+1. `completeCore` hastalık kontrolü artık servis katmanında, aynı işlem içinde
+   (`completeCoreInTx`): önce slot tamamlanmışsa mevcut ödül döner (iptal yok, çift XP yok),
+   ancak YENİ bir `training` tamamlaması bugünkü check-in `illness: 'yes'` iken
+   `rejected/illness` ile reddedilir. `recovery` ve `illness-recovery` aynı 60 XP'yi verir.
+   `unknown` antrenmanı engellemez (yalnız yük artışı dondurulur; mevcut kural).
+   Regresyon testleri `tests/service.test.ts` (SQLite + IndexedDB, 6×2): ret ve yeniden
+   açılışta XP yok; toparlanma bir kez; tekrar çağrı `already-completed`; hastalık sonradan
+   bildirilirse önceki antrenman ödülü korunur; eşzamanlı dokunuşlarda tek ödül.
+2. `playwright@1.63.0` tam sürümle devDependency + `package-lock.json`. Chromium kurulumu
+   `npm run e2e:install-browser` olarak README ve docs/SETUP.md'de belgelendi.
+   Temiz kurulum doğrulaması: repo scratch dizine yeniden klonlandı → `npm ci` (14,6 sn)
+   → `npx playwright --version` 1.63.0 → `npm run export:web` → `npm run test:web` PASS.
+   Not: bu ortamda Chromium `/opt/pw-browsers` (PLAYWRIGHT_BROWSERS_PATH, revizyon 1243)
+   üzerinden hazırdı; `playwright install` indirmesi burada çalıştırılmadı
+   (`--dry-run` doğru revizyonu ve konumu gösterdi).
+
+### M1 davranışı
+- Antrenman profili (`src/domain/training/profile.ts`): hedef, 2–6 gün, isteğe bağlı seans
+  süresi, ekipman, deneyim, hareket kısıtları (baş üstü, omurgaya eksenel yük, derin diz
+  bükme, bilek); boy/kilo isteğe bağlı (boş = null, NaN/aralık dışı reddedilir).
+  Varsayılan PPLPP değerleri "öneri" olarak gösterilir; onaylanmadan kaydedilmez.
+- Program (`program.ts`, `catalog.ts`): 29 hareketlik özgün katalog (yük kuralı: toplam /
+  dambıl başına / vücut ağırlığına ek). Gün sayısına göre bölünme (5 gün = İtiş/Çekiş/Bacak/
+  İtiş/Çekiş; "bacak haftada 1 gün" UI'da açıkça yazılır). Yük önerilmez; set, tekrar aralığı,
+  hedef RIR 2 (ürün varsayımı). Kısıtlı/ekipmansız hareket hiç üretilmez ve doğrulamada reddedilir.
+- Düzenleme: gün adı, haftanın günü, set/tekrar, alternatif hareket (aynı kalıp), ekle/çıkar →
+  önizleme (yapısal fark listesi) → onay → yeni değişmez `plan_version` (parentId, sequence,
+  reason=JSON fark). Eski sürüme göre kaydetme (`baseVersionId` eskiyse) `plan-changed` ile reddedilir.
+  Profil değişip program uyumsuz kalırsa antrenman başlatma `plan-invalid` ile engellenir,
+  yeni öneri önizlenip onaylanır.
+- Haftalık takvim (`schedule.ts`): Pazartesi başlangıçlı yerel hafta; planlı seans kimliği
+  `${weekStart}:${programDayId}`. Taşıma yalnız bu haftada, bugün veya sonrasına, boş güne;
+  tamamlanan/devam eden taşınamaz. Kaçırılan seans "Kaçırıldı (borç yok)" olarak kalır.
+- Antrenman: yalnız bugüne düşen seans başlatılır; hastalıkta başlatma reddedilir. Hareket başına
+  set türü (ısınma/çalışma), tekrar, ağırlık (Türkçe virgül kabul), kg/lb, isteğe bağlı RIR
+  (yalnız çalışma setinde; boş = null). Her set anında yazılır; uygulama kapanınca
+  açılışta Bugün "Antrenmana devam et" gösterir. Isınma setleri çalışma setine sayılmaz;
+  bitirmek için ≥1 çalışma seti gerekir. Bırakma setleri saklar, ödül/borç yok.
+  Son tamamlanan seansın çalışma setleri referans olarak gösterilir.
+- Ödül bağlantısı: `finishWorkout` aynı işlemde seansı bitirir ve başlatıldığı görev gününün
+  `core` slotunu `training` + `workoutSessionId` ile tamamlar. Ana görev zaten tamamlandıysa
+  (toparlanma veya başka antrenman) kayıt saklanır, ödül `already-completed`. Gün kapandıysa
+  `day-changed`, saat geri alındıysa `clock-frozen`, hastalık sonradan bildirildiyse `illness`:
+  kayıt saklanır, XP verilmez. Program/gün değişikliği ve set düzenleme ödüle dokunmaz.
+- Kalıcılık: SQLite migration 2 (ek sütun `quest_slot.workout_session_id`; tablolar
+  `training_profile`, `plan_version`, `schedule_move`, `workout_session` (tek aktif seans ve
+  slot başına tek bitmiş seans için kısmi UNIQUE indeksler), `set_log`). IndexedDB belge
+  şeması 1→2 (ek alanlar, mevcut kayıtlar aynen taşınır). Bugün sekmesi program varsa
+  "Antrenmana başla/devam et" gösterir; program yoksa M0'daki beyanla tamamlama sürer.
+
+### Bağımsız inceleme (avci-qa + avci-training rolleri, salt okuma) ve düzeltmeler
+Ciddi hata yok; XP çoğaltma ve veri kaybı yolu bulunmadı (eşzamanlı bitir ×2 + toparlanma
+→ tek defter kaydı, iki depoda). Bulunan 7 sorun düzeltildi ve testlendi:
+1. 0 tekrarlı çalışma seti ana görevi tamamlayabiliyordu → çalışma seti ≥1 tekrar.
+2. Bazı ekipman/kısıt birleşimlerinde boş gün üretilip öneri kabul edilemiyordu →
+   kısıtsız vücut ağırlığı yedekleri; 255×16×5 = 20.400 birleşimin tamamı test ediliyor.
+3. Program günü kimlikleri sıra numarasıydı (d1…); farklı bölünme eski "tamamlandı"
+   durumunu devralıyordu → kimlik şablon tekrarına bağlı (`push-1`, `full-a-1`…).
+4–5. Saat anomalisi/hastalık yüzünden ödülü reddedilen bitmiş antrenman, durum düzelince
+   ana göreve sayılamıyor ve tekrar denemede yanlışlıkla "zaten tamamlandı" diyordu →
+   `finishWorkout` tekrarında ödül yeniden değerlendirilir (idempotent); Bugün'de
+   "Kaydedilen antrenmanı ana göreve say" düğmesi.
+6. Eklem ağrısı Antrenman ekranında görünmüyordu → hafta ve kayıt ekranında uyarı.
+7. Devam eden antrenmanda sonradan hastalık bildirilince uyarı yoktu → kayıt ekranında
+   uyarı + bırakma; önceki günden kalan seansta "ödül vermez" notu.
+Açık bırakılan düşük öncelikliler: lastik direnci için yük birimi yok; program düzenlemesi
+taşınmış bir seansla aynı güne gün koyabilir (XP etkisi yok).
+
+### Değişen yollar
+`apps/mobile/src/{domain/training/*,data/**,services/avci-service.ts,app/antrenman.tsx,app/index.tsx,
+app/_layout.tsx,ui/**}`, `apps/mobile/tests/*` (helpers, migration, training-domain,
+training-service), `apps/mobile/e2e/web-training.mjs`, `apps/mobile/package*.json`,
+`apps/mobile/README.md`, `docs/SETUP.md`, `docs/PROGRESS.md`, `docs/DECISIONS.md`.
+
+### Çalıştırılan komutlar ve gerçek sonuçlar (apps/mobile)
+- `npm run typecheck` → hata yok.
+- `npm run lint` → hata/uyarı yok.
+- `npm test` → 7 dosya, 167 test geçti (M0: 49 → 167; inceleme düzeltmeleri dahil). İki gerçek depo (node:sqlite,
+  fake-indexeddb) üzerinde M1 servis senaryoları ve M0 v1 verisiyle migration testleri
+  (SQLite: tüm satırlar korunur, migration hatasında v1 geri alınır; IndexedDB: v1 belge
+  korunur, gelecekteki sürüm depoyu değiştirmeden reddedilir).
+- `npm run export:web` → `dist/` üretildi.
+- `npm run test:web` → `web-persistence.mjs` PASS (M0 akışı değişmedi) ve
+  `web-training.mjs` PASS (Chromium 390×844, saat 2026-11-09 09:00 İstanbul'a sabit):
+  profil → check-in → antrenman bilgileri onayı (boy/kilo boş) → öneri (bacak 1 gün) →
+  kabul → İtiş A başlat → ısınma + 2 çalışma seti (42,5 kg, RIR 2 / boş) → tarayıcıyı
+  tamamen kapatıp aç → Bugün'de "devam et" → 3 set geri geldi → bitir → +60 XP, toplam 70 →
+  Çekiş A'yı Perşembe'ye taşı → programda set artır → önizleme → sürüm 2 → yenile →
+  taşıma ve "Tamamlandı" korunuyor → toplam hâlâ 70 XP; sayfa hatası yok.
+- `npx expo-doctor` → 18/20 kontrol geçti, **2 kontrol ağ nedeniyle başarısız**:
+  "Expo config schema" (`getaddrinfo ENOTFOUND exp.host`) ve "React Native Directory"
+  (sunucu yanıtı alınamadı). GEÇTİ SAYILMAZ; yerel makinede tekrar çalıştırılmalı.
+
+### Doğrulanmamış / açık noktalar
+- iPhone: migration 2'nin cihazdaki SQLite'ta çalışması, sayısal klavye, set girişi sırasında
+  arka plana alma ve geri dönüş, uygulama sonlandırılıp açılınca devam — SINANMADI.
+- Dinlenme sayacı yok (UX listesinde; sonraki dilim). Eklem ağrısı bölgesi sorulmadığı için
+  "ağrıyan hareketleri duraklat" otomatik değil; ağrı bildiriminde uyarı gösteriliyor.
+- Yük artışı önerisi (çift ilerleme) ve haftalık değerlendirme M2'de.
+- Önceki program sürümüne dönme arayüzü yok (sürümler saklanıyor).
 
 ## 2026-11-09 / M0 / ilk dikey dilim
 
@@ -62,14 +176,16 @@ ve test edildi. Native (iPhone) davranışı henüz gerçek cihazda sınanmadı.
 - Export/import/silme yok (M3).
 
 ## Next
-1. Yeni oturumda proje ajanlarının yüklendiğini doğrula (`/agents`), `/resume-avci`.
-2. M1: profil doğrulama (güncel kilo/gün/ekipman/kısıt), haftalık program (PPLPP taslağı
-   doğrulanarak), antrenman günlüğü (set/tekrar/yük/birim/RIR, ısınma ayrımı,
-   yarıda kalan antrenmana devam), gün taşıma; ana görev slotunu antrenman kaydına bağla.
-3. Yerel bilgisayarda `npx expo-doctor` ve `npx expo install --check` çalıştır.
+1. Oturumu bu daldan başlatıp `/agents` ile avci-* ajanlarını doğrula, `/resume-avci`.
+2. M2: TRAINING_RULES çift ilerleme önerisi (son iki karşılaştırılabilir seans, RIR≥2,
+   14 gün kapısı, en küçük artış ≤%5), önizleme/kabul/ret denetim kaydı, haftalık
+   değerlendirme (40 XP, haftalık döngü kimliği). Dinlenme sayacı.
+3. Yerel bilgisayarda `npx expo-doctor` ve `npx expo install --check`; EAS development
+   build ile iPhone'da M0+M1 akışını (uçak modu dahil) sına.
 
 ## Completed milestones
 - M0: web üzerinde tamam ve test edildi. Native kısmı gerçek cihazda doğrulanmadı.
+- M1: web üzerinde tamam ve test edildi (2026-11-09). Native kısmı gerçek cihazda doğrulanmadı.
 
 ## Update template
 For each slice: date / milestone / implemented behavior / changed paths /

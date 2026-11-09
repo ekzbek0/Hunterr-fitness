@@ -1,16 +1,25 @@
 import type { MultiplierHalves } from '@/domain/game/economy';
 import type { CoreResolution, SlotKind } from '@/domain/game/quests';
+import type { LoadConvention } from '@/domain/training/catalog';
+import type { Program } from '@/domain/training/program';
 import type { TriState } from '@/domain/training/readiness';
+import type { LoadUnit, SetKind } from '@/domain/training/workout';
 
 import type {
   AvciRepository,
   DailyCheckin,
   LedgerEntry,
+  PlanVersion,
   Profile,
   QuestSlot,
+  ScheduleMove,
   ScopeKind,
+  SetLog,
   StoreTx,
   TaskDay,
+  TrainingProfile,
+  WorkoutSession,
+  WorkoutStatus,
 } from '../types';
 import type { SqlDriver } from './driver';
 import { migrate } from './migrations';
@@ -48,6 +57,55 @@ const toSlot = (r: Row): QuestSlot => ({
   resolution: optStr(r.resolution) as CoreResolution | null,
   completedAt: optStr(r.completed_at),
   version: num(r.version),
+  workoutSessionId: optStr(r.workout_session_id),
+});
+const toTrainingProfile = (r: Row): TrainingProfile => ({
+  ...(JSON.parse(str(r.facts)) as Omit<TrainingProfile, 'profileId' | 'confirmedAt'>),
+  profileId: str(r.profile_id),
+  confirmedAt: str(r.confirmed_at),
+});
+const toPlan = (r: Row): PlanVersion => ({
+  id: str(r.id),
+  parentId: optStr(r.parent_id),
+  sequence: num(r.sequence),
+  source: str(r.source) as PlanVersion['source'],
+  reason: str(r.reason),
+  createdAt: str(r.created_at),
+  acceptedAt: str(r.accepted_at),
+  program: JSON.parse(str(r.program)) as Program,
+});
+const toMove = (r: Row): ScheduleMove => ({
+  slotId: str(r.slot_id),
+  weekStart: str(r.week_start),
+  toDate: str(r.to_date),
+  movedAt: str(r.moved_at),
+});
+const toSession = (r: Row): WorkoutSession => ({
+  id: str(r.id),
+  taskDayId: str(r.task_day_id),
+  scheduleSlotId: optStr(r.schedule_slot_id),
+  planVersionId: str(r.plan_version_id),
+  programDayId: str(r.program_day_id),
+  title: str(r.title),
+  exercises: JSON.parse(str(r.exercises)) as WorkoutSession['exercises'],
+  startedAt: str(r.started_at),
+  finishedAt: optStr(r.finished_at),
+  status: str(r.status) as WorkoutStatus,
+  version: num(r.version),
+});
+const toSet = (r: Row): SetLog => ({
+  id: str(r.id),
+  sessionId: str(r.session_id),
+  exerciseId: str(r.exercise_id),
+  kind: str(r.kind) as SetKind,
+  position: num(r.position),
+  reps: num(r.reps),
+  load: num(r.load),
+  unit: str(r.unit) as LoadUnit,
+  loadConvention: str(r.load_convention) as LoadConvention,
+  rir: r.rir === null || r.rir === undefined ? null : num(r.rir),
+  loggedAt: str(r.logged_at),
+  updatedAt: str(r.updated_at),
 });
 const toCheckin = (r: Row): DailyCheckin => ({
   taskDayId: str(r.task_day_id),
@@ -127,16 +185,16 @@ function sqlTx(d: SqlDriver): StoreTx {
     },
     async insertSlot(s) {
       await d.run(
-        `INSERT INTO quest_slot (task_day_id, slot_key, kind, title, base_xp, status, resolution, completed_at, version)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [s.taskDayId, s.slotKey, s.kind, s.title, s.baseXp, s.status, s.resolution, s.completedAt, s.version],
+        `INSERT INTO quest_slot (task_day_id, slot_key, kind, title, base_xp, status, resolution, completed_at, version, workout_session_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [s.taskDayId, s.slotKey, s.kind, s.title, s.baseXp, s.status, s.resolution, s.completedAt, s.version, s.workoutSessionId],
       );
     },
     async updateSlot(s) {
       await d.run(
-        `UPDATE quest_slot SET status = ?, resolution = ?, completed_at = ?, version = ?
+        `UPDATE quest_slot SET status = ?, resolution = ?, completed_at = ?, version = ?, workout_session_id = ?
          WHERE task_day_id = ? AND slot_key = ?`,
-        [s.status, s.resolution, s.completedAt, s.version, s.taskDayId, s.slotKey],
+        [s.status, s.resolution, s.completedAt, s.version, s.workoutSessionId, s.taskDayId, s.slotKey],
       );
     },
     async getCheckin(taskDayId) {
@@ -152,6 +210,123 @@ function sqlTx(d: SqlDriver): StoreTx {
            illness = excluded.illness, recorded_at = excluded.recorded_at`,
         [c.taskDayId, c.sleepHours, c.energy, c.fatigue, c.soreness, c.jointPain, c.illness, c.recordedAt],
       );
+    },
+    async getTrainingProfile() {
+      const r = await d.first<Row>('SELECT * FROM training_profile LIMIT 1');
+      return r ? toTrainingProfile(r) : null;
+    },
+    async putTrainingProfile(tp) {
+      const { profileId, confirmedAt, ...facts } = tp;
+      await d.run(
+        `INSERT INTO training_profile (profile_id, facts, confirmed_at) VALUES (?, ?, ?)
+         ON CONFLICT(profile_id) DO UPDATE SET facts = excluded.facts, confirmed_at = excluded.confirmed_at`,
+        [profileId, JSON.stringify(facts), confirmedAt],
+      );
+    },
+    async getLatestPlan() {
+      const r = await d.first<Row>('SELECT * FROM plan_version ORDER BY sequence DESC LIMIT 1');
+      return r ? toPlan(r) : null;
+    },
+    async getPlan(id) {
+      const r = await d.first<Row>('SELECT * FROM plan_version WHERE id = ?', [id]);
+      return r ? toPlan(r) : null;
+    },
+    async insertPlan(p) {
+      await d.run(
+        `INSERT INTO plan_version (id, parent_id, sequence, source, reason, created_at, accepted_at, program)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [p.id, p.parentId, p.sequence, p.source, p.reason, p.createdAt, p.acceptedAt, JSON.stringify(p.program)],
+      );
+    },
+    async listPlans(limit) {
+      const rows = await d.all<Row>('SELECT * FROM plan_version ORDER BY sequence DESC LIMIT ?', [limit]);
+      return rows.map(toPlan);
+    },
+    async listMoves(weekStart) {
+      const rows = await d.all<Row>('SELECT * FROM schedule_move WHERE week_start = ?', [weekStart]);
+      return rows.map(toMove);
+    },
+    async putMove(m) {
+      await d.run(
+        `INSERT INTO schedule_move (slot_id, week_start, to_date, moved_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(slot_id) DO UPDATE SET to_date = excluded.to_date, moved_at = excluded.moved_at`,
+        [m.slotId, m.weekStart, m.toDate, m.movedAt],
+      );
+    },
+    async getActiveSession() {
+      const r = await d.first<Row>("SELECT * FROM workout_session WHERE status = 'in-progress' LIMIT 1");
+      return r ? toSession(r) : null;
+    },
+    async getSession(id) {
+      const r = await d.first<Row>('SELECT * FROM workout_session WHERE id = ?', [id]);
+      return r ? toSession(r) : null;
+    },
+    async insertSession(s) {
+      await d.run(
+        `INSERT INTO workout_session (id, task_day_id, schedule_slot_id, plan_version_id, program_day_id, title, exercises,
+           started_at, finished_at, status, version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [s.id, s.taskDayId, s.scheduleSlotId, s.planVersionId, s.programDayId, s.title, JSON.stringify(s.exercises),
+          s.startedAt, s.finishedAt, s.status, s.version],
+      );
+    },
+    async updateSession(s) {
+      // Identity, origin day and prescription snapshot are immutable.
+      await d.run('UPDATE workout_session SET finished_at = ?, status = ?, version = ? WHERE id = ?', [
+        s.finishedAt,
+        s.status,
+        s.version,
+        s.id,
+      ]);
+    },
+    async listSessionsForWeek(weekStart) {
+      const rows = await d.all<Row>(
+        "SELECT * FROM workout_session WHERE schedule_slot_id LIKE ? || ':%' ORDER BY started_at",
+        [weekStart],
+      );
+      return rows.map(toSession);
+    },
+    async listRecentSessions(limit) {
+      const rows = await d.all<Row>('SELECT * FROM workout_session ORDER BY started_at DESC, rowid DESC LIMIT ?', [limit]);
+      return rows.map(toSession);
+    },
+    async listSets(sessionId) {
+      const rows = await d.all<Row>('SELECT * FROM set_log WHERE session_id = ? ORDER BY position', [sessionId]);
+      return rows.map(toSet);
+    },
+    async getSet(id) {
+      const r = await d.first<Row>('SELECT * FROM set_log WHERE id = ?', [id]);
+      return r ? toSet(r) : null;
+    },
+    async insertSet(x) {
+      await d.run(
+        `INSERT INTO set_log (id, session_id, exercise_id, kind, position, reps, load, unit, load_convention, rir, logged_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [x.id, x.sessionId, x.exerciseId, x.kind, x.position, x.reps, x.load, x.unit, x.loadConvention, x.rir, x.loggedAt, x.updatedAt],
+      );
+    },
+    async updateSet(x) {
+      await d.run('UPDATE set_log SET kind = ?, reps = ?, load = ?, unit = ?, rir = ?, updated_at = ? WHERE id = ?', [
+        x.kind,
+        x.reps,
+        x.load,
+        x.unit,
+        x.rir,
+        x.updatedAt,
+        x.id,
+      ]);
+    },
+    async deleteSet(id) {
+      await d.run('DELETE FROM set_log WHERE id = ?', [id]);
+    },
+    async listFinishedSetsForExercise(exerciseId, limit) {
+      const rows = await d.all<Row>(
+        `SELECT s.* FROM set_log s JOIN workout_session w ON w.id = s.session_id
+         WHERE s.exercise_id = ? AND w.status = 'finished'
+         ORDER BY w.started_at DESC, s.position ASC LIMIT ?`,
+        [exerciseId, limit],
+      );
+      return rows.map(toSet);
     },
     async insertLedger(e) {
       const res = await d.run(

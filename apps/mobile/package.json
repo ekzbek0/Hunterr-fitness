@@ -34,6 +34,7 @@
     "eslint": "^9.39.5",
     "eslint-config-expo": "~58.0.4",
     "fake-indexeddb": "^6.2.8",
+    "playwright": "1.63.0",
     "typescript": "~6.0.3",
     "vitest": "^5.1.0"
   },
@@ -46,7 +47,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "export:web": "expo export --platform web",
-    "test:web": "node e2e/web-persistence.mjs"
+    "test:web": "node e2e/web-persistence.mjs && node e2e/web-training.mjs",
+    "e2e:install-browser": "playwright install chromium"
   },
   "private": true
 }

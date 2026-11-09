@@ -32,6 +32,13 @@ If a cloud Expo MCP is needed, follow the current official setup and configure
 network/OAuth. Example ONLY, not an automatically activated duplicate:
 `examples/expo-cloud.mcp.json`. Never put a token in this file.
 
+## Web browser tests (Playwright)
+`apps/mobile` pins `playwright` as an exact devDependency (lockfile-locked).
+After `npm ci`, install the matching Chromium once with
+`npm run e2e:install-browser` (`--with-deps` on bare Linux), then
+`npm run export:web && npm run test:web`. Details: `apps/mobile/README.md`.
+Cloud sessions may already provide browsers via `PLAYWRIGHT_BROWSERS_PATH`.
+
 ## iOS route
 Web preview first. Then EAS development build using the user's Expo account
 and Apple signing; no local Mac needed for the EAS cloud build. Linux has no

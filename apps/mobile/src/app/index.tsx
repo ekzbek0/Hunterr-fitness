@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
@@ -5,7 +6,7 @@ import type { QuestSlot } from '@/data/types';
 import { awardedXp, multiplierLabel, type MultiplierHalves } from '@/domain/game/economy';
 import { DEFAULT_HABIT_KEYS, HABIT_CATALOG, SLOT_KEYS, type CoreResolution } from '@/domain/game/quests';
 import type { CheckinInput, CoreSuggestion, TriState } from '@/domain/training/readiness';
-import type { CompletionResult } from '@/services/avci-service';
+import type { CompletionResult, TodaySnapshot } from '@/services/avci-service';
 import { useAvci } from '@/ui/avci-context';
 import { Button, Card, Chip, Screen, StorageGate, T, XpBar } from '@/ui/components';
 import { formatDate, RANK_TITLES, REASON_LABELS, RESOLUTION_LABELS } from '@/ui/labels';
@@ -30,6 +31,7 @@ function resultMessage(r: CompletionResult | unknown): string | null {
     invalid: 'Girilen değerler geçersiz.',
     'no-profile': 'Önce profil oluştur.',
     'unknown-slot': 'Görev bulunamadı.',
+    illness: 'Bugün hastalık bildirdin: antrenman tamamlanamaz. Toparlanma aynı ödülü kazandırır.',
   };
   return reasons[res.reason] ?? 'İşlem yapılamadı.';
 }
@@ -104,8 +106,15 @@ function Today() {
         slot={slot(SLOT_KEYS.core)}
         xp={awardedXp(slot(SLOT_KEYS.core).baseXp, mult)}
         suggestion={snapshot.suggestion}
+        training={snapshot.training}
         disabled={busy}
         onComplete={(r) => run((s) => s.completeCore(today.id, r))}
+        onClaim={(sessionId) =>
+          run(async (s) => {
+            const r = await s.finishWorkout(sessionId);
+            return r.status === 'ok' ? r.value.reward : { status: 'rejected', reason: 'invalid' };
+          })
+        }
       />
 
       <Card>
@@ -282,32 +291,47 @@ function CoreCard({
   slot,
   xp,
   suggestion,
+  training,
   disabled,
   onComplete,
+  onClaim,
 }: {
   slot: QuestSlot;
   xp: number;
   suggestion: CoreSuggestion | null;
+  training: TodaySnapshot['training'];
   disabled: boolean;
   onComplete: (r: CoreResolution) => void;
+  /** Retry the reward of a finished workout whose earlier claim was refused (e.g. clock anomaly). */
+  onClaim?: (sessionId: string) => void;
 }) {
+  const router = useRouter();
+  const goTrain = () => router.navigate('/antrenman');
   if (slot.status === 'completed') {
     const recovery = slot.resolution !== 'training';
     return (
       <Card accent={recovery ? C.recovery : C.success}>
         <Text style={T.h3}>✓ Ana görev</Text>
         <Text style={T.body}>{slot.resolution ? RESOLUTION_LABELS[slot.resolution] : 'Tamamlandı'}</Text>
+        {slot.workoutSessionId && <Text style={T.muted}>Antrenman kaydıyla tamamlandı.</Text>}
         {recovery && <Text style={T.muted}>Toparlanma da başarıdır: antrenmanla aynı ödülü kazandırır.</Text>}
+        {training.activeSession && (
+          <Button label="Devam eden antrenmana dön" variant="secondary" onPress={goTrain} />
+        )}
       </Card>
     );
   }
   const paused = suggestion?.mode === 'pause-training';
+  const { activeSession, planned, hasProgram } = training;
   return (
     <Card accent={C.violet}>
       <Text style={T.h3}>Ana görev (+{xp} XP)</Text>
       <Text style={T.muted}>
-        Planlı antrenmanını ya da planlı toparlanma gününü tamamla. İkisi de aynı ödülü verir. Antrenman programı ve set
-        kaydı bir sonraki aşamada (M1) eklenecek.
+        {hasProgram
+          ? planned
+            ? `Bugünün antrenmanı: ${planned.title}. Antrenmanı kaydedip bitirmek ya da planlı toparlanma aynı ödülü verir.`
+            : 'Bugün programında antrenman yok: planlı toparlanma günü. İstersen bu haftanın bir antrenmanını bugüne taşıyabilirsin.'
+          : 'Planlı antrenmanını ya da planlı toparlanma gününü tamamla. İkisi de aynı ödülü verir. Set kaydı için Antrenman sekmesinde program oluştur.'}
       </Text>
       {suggestion?.reasons.map((r) => (
         <Text key={r} style={[T.body, { color: C.warning }]}>
@@ -321,11 +345,22 @@ function CoreCard({
             onPress={() => onComplete('illness-recovery')} />
         ) : (
           <>
-            <Button label="Antrenmanı tamamladım" disabled={disabled} onPress={() => onComplete('training')} />
+            {activeSession ? (
+              <Button label={`Antrenmana devam et: ${activeSession.title}`} disabled={disabled} onPress={goTrain} />
+            ) : hasProgram ? (
+              planned?.state === 'planned' ? (
+                <Button label={`Antrenmana başla: ${planned.title}`} disabled={disabled} onPress={goTrain} />
+              ) : planned?.state === 'done' && planned.sessionId && onClaim ? (
+                <Button label="Kaydedilen antrenmanı ana göreve say" disabled={disabled} onPress={() => onClaim(planned.sessionId!)} />
+              ) : null
+            ) : (
+              <Button label="Antrenmanı tamamladım" disabled={disabled} onPress={() => onComplete('training')} />
+            )}
             <Button label="Planlı toparlanma günü" variant="recovery" disabled={disabled} onPress={() => onComplete('recovery')} />
           </>
         )}
       </View>
+      {paused && activeSession && <Button label="Devam eden antrenmanı görüntüle" variant="secondary" onPress={goTrain} />}
     </Card>
   );
 }

@@ -1,6 +1,13 @@
 import type { MultiplierHalves } from '@/domain/game/economy';
 import type { CoreResolution, SlotKind } from '@/domain/game/quests';
+import type { LoadConvention } from '@/domain/training/catalog';
+import type { PrescribedExercise, Program } from '@/domain/training/program';
+import type { TrainingProfileFacts } from '@/domain/training/profile';
 import type { TriState } from '@/domain/training/readiness';
+import type { ScheduleMove } from '@/domain/training/schedule';
+import type { LoadUnit, SetKind } from '@/domain/training/workout';
+
+export type { ScheduleMove };
 
 export interface Profile {
   id: string;
@@ -33,6 +40,8 @@ export interface QuestSlot {
   resolution: CoreResolution | null;
   completedAt: string | null;
   version: number;
+  /** Daily core only: the workout that completed it (null for recovery/self-report). */
+  workoutSessionId: string | null;
 }
 
 export interface DailyCheckin {
@@ -60,6 +69,59 @@ export interface LedgerEntry {
   completedAt: string;
 }
 
+export interface TrainingProfile extends TrainingProfileFacts {
+  profileId: string;
+  /** Facts are only stored after the user confirms them. */
+  confirmedAt: string;
+}
+
+/** Immutable once written; edits create a child version (audit trail). */
+export interface PlanVersion {
+  id: string;
+  parentId: string | null;
+  sequence: number;
+  source: 'generated' | 'user-edit';
+  /** Machine-readable change summary (JSON of ProgramChange[] or a generation note). */
+  reason: string;
+  createdAt: string;
+  acceptedAt: string;
+  program: Program;
+}
+
+export type WorkoutStatus = 'in-progress' | 'finished' | 'abandoned';
+
+export interface WorkoutSession {
+  id: string;
+  /** Task day on which the session was started; its daily core is the only reward it can complete. */
+  taskDayId: string;
+  scheduleSlotId: string | null;
+  planVersionId: string;
+  programDayId: string;
+  title: string;
+  /** Prescription snapshot at start; later plan edits do not rewrite it. */
+  exercises: PrescribedExercise[];
+  startedAt: string;
+  finishedAt: string | null;
+  status: WorkoutStatus;
+  version: number;
+}
+
+export interface SetLog {
+  id: string;
+  sessionId: string;
+  exerciseId: string;
+  kind: SetKind;
+  /** Order of entry within the session. */
+  position: number;
+  reps: number;
+  load: number;
+  unit: LoadUnit;
+  loadConvention: LoadConvention;
+  rir: number | null;
+  loggedAt: string;
+  updatedAt: string;
+}
+
 /** Primitive operations available inside one atomic transaction. */
 export interface StoreTx {
   getProfile(): Promise<Profile | null>;
@@ -78,6 +140,33 @@ export interface StoreTx {
 
   getCheckin(taskDayId: string): Promise<DailyCheckin | null>;
   putCheckin(checkin: DailyCheckin): Promise<void>;
+
+  getTrainingProfile(): Promise<TrainingProfile | null>;
+  putTrainingProfile(tp: TrainingProfile): Promise<void>;
+
+  getLatestPlan(): Promise<PlanVersion | null>;
+  getPlan(id: string): Promise<PlanVersion | null>;
+  insertPlan(plan: PlanVersion): Promise<void>;
+  listPlans(limit: number): Promise<PlanVersion[]>;
+
+  listMoves(weekStart: string): Promise<ScheduleMove[]>;
+  putMove(move: ScheduleMove): Promise<void>;
+
+  getActiveSession(): Promise<WorkoutSession | null>;
+  getSession(id: string): Promise<WorkoutSession | null>;
+  insertSession(s: WorkoutSession): Promise<void>;
+  updateSession(s: WorkoutSession): Promise<void>;
+  /** Sessions whose schedule slot belongs to the given week. */
+  listSessionsForWeek(weekStart: string): Promise<WorkoutSession[]>;
+  listRecentSessions(limit: number): Promise<WorkoutSession[]>;
+
+  listSets(sessionId: string): Promise<SetLog[]>;
+  getSet(id: string): Promise<SetLog | null>;
+  insertSet(set: SetLog): Promise<void>;
+  updateSet(set: SetLog): Promise<void>;
+  deleteSet(id: string): Promise<void>;
+  /** Most recent sets of an exercise from finished sessions, newest first. */
+  listFinishedSetsForExercise(exerciseId: string, limit: number): Promise<SetLog[]>;
 
   /** Inserts unless the logical reward key exists. Never overwrites. */
   insertLedger(entry: LedgerEntry): Promise<'inserted' | 'conflict'>;

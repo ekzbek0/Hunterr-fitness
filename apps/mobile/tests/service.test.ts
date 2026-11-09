@@ -4,67 +4,12 @@
  * SQLite (node:sqlite stand-in for expo-sqlite) and IndexedDB (fake-indexeddb).
  * "Restart" = close the repository and open a fresh one on the same storage.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createDocumentRepository } from '@/data/document/document-repository';
-import { indexedDbStorage } from '@/data/document/indexeddb-storage';
-import { createSqliteRepository } from '@/data/sqlite/sqlite-repository';
 import type { AvciRepository } from '@/data/types';
-import type { CheckinInput } from '@/domain/training/readiness';
-import { AvciService, type Clock } from '@/services/avci-service';
+import { AvciService } from '@/services/avci-service';
 
-import { nodeSqliteDriver } from './node-sqlite-driver';
-
-class FakeClock implements Clock {
-  constructor(
-    public instant: Date,
-    public tz = 'Europe/Istanbul',
-  ) {}
-  now() {
-    return new Date(this.instant);
-  }
-  timeZone() {
-    return this.tz;
-  }
-  set(iso: string) {
-    this.instant = new Date(iso);
-  }
-}
-
-interface Backend {
-  name: string;
-  setup(): void;
-  open(): Promise<AvciRepository>;
-  teardown(): void;
-}
-
-const backends: Backend[] = [
-  (() => {
-    let dir = '';
-    return {
-      name: 'SQLite',
-      setup: () => void (dir = mkdtempSync(join(tmpdir(), 'avci-'))),
-      open: () => createSqliteRepository(nodeSqliteDriver(join(dir, 'avci.db')), 'test-sqlite'),
-      teardown: () => rmSync(dir, { recursive: true, force: true }),
-    };
-  })(),
-  (() => {
-    let factory = new IDBFactory();
-    return {
-      name: 'IndexedDB',
-      setup: () => void (factory = new IDBFactory()),
-      open: () => createDocumentRepository(indexedDbStorage(factory, 'avci'), 'test-idb'),
-      teardown: () => undefined,
-    };
-  })(),
-];
-
-const goodCheckin: CheckinInput = { sleepHours: 7.5, energy: 4, fatigue: 2, soreness: 1, jointPain: 'no', illness: 'no' };
+import { backends, FakeClock, goodCheckin, illCheckin } from './helpers';
 
 describe.each(backends)('M0 daily quest -> XP -> restart ($name)', (backend) => {
   let repo: AvciRepository;
@@ -271,5 +216,75 @@ describe.each(backends)('M0 daily quest -> XP -> restart ($name)', (backend) => 
     const [a, b] = await Promise.all([service.createProfile({}), service.createProfile({})]);
     expect(a.id).toBe(b.id);
     expect((await service.loadToday()).recentDays).toHaveLength(1);
+  });
+  // ---- Regression: illness must block NEW training completion in the service layer ----
+
+  it('illness today: training completion is refused with a reason and grants nothing', async () => {
+    await service.createProfile({});
+    const id = (await service.loadToday()).today!.id;
+    await service.recordCheckin(id, illCheckin);
+    expect(await service.completeCore(id, 'training')).toEqual({ status: 'rejected', reason: 'illness' });
+    await restart();
+    const s = await service.loadToday();
+    expect(s.slots.find((x) => x.slotKey === 'core')!.status).toBe('open');
+    expect(s.progress.totalXp).toBe(10);
+  });
+
+  it('illness today: recovery earns the same 60 XP exactly once, retries do not double it', async () => {
+    await service.createProfile({});
+    const id = (await service.loadToday()).today!.id;
+    await service.recordCheckin(id, illCheckin);
+    const first = await service.completeCore(id, 'illness-recovery');
+    expect(first.status === 'awarded' && first.entry.awardedXp).toBe(60);
+    expect((await service.completeCore(id, 'illness-recovery')).status).toBe('already-completed');
+    // A completed core reports its existing reward, even for a training retry.
+    expect((await service.completeCore(id, 'training')).status).toBe('already-completed');
+    await restart();
+    expect((await service.completeCore(id, 'recovery')).status).toBe('already-completed');
+    const s = await service.loadToday();
+    expect(s.slots.find((x) => x.slotKey === 'core')!.resolution).toBe('illness-recovery');
+    expect(s.progress.totalXp).toBe(70);
+  });
+
+  it('illness today: planned recovery is also allowed and equal', async () => {
+    await service.createProfile({});
+    const id = (await service.loadToday()).today!.id;
+    await service.recordCheckin(id, illCheckin);
+    const r = await service.completeCore(id, 'recovery');
+    expect(r.status === 'awarded' && r.entry.awardedXp).toBe(60);
+  });
+
+  it('illness reported AFTER training was completed does not revoke the earned reward', async () => {
+    await service.createProfile({});
+    const id = (await service.loadToday()).today!.id;
+    await service.recordCheckin(id, goodCheckin);
+    expect((await service.completeCore(id, 'training')).status).toBe('awarded');
+    expect((await service.recordCheckin(id, illCheckin)).status).toBe('already-completed');
+    expect((await service.completeCore(id, 'training')).status).toBe('already-completed');
+    expect((await service.completeCore(id, 'illness-recovery')).status).toBe('already-completed');
+    const s = await service.loadToday();
+    expect(s.slots.find((x) => x.slotKey === 'core')!.resolution).toBe('training');
+    expect(s.progress.totalXp).toBe(70);
+  });
+
+  it('illness today: concurrent training/recovery taps yield one recovery reward', async () => {
+    await service.createProfile({});
+    const id = (await service.loadToday()).today!.id;
+    await service.recordCheckin(id, illCheckin);
+    const results = await Promise.all([
+      service.completeCore(id, 'training'),
+      service.completeCore(id, 'illness-recovery'),
+      service.completeCore(id, 'training'),
+      service.completeCore(id, 'illness-recovery'),
+    ]);
+    expect(results.filter((r) => r.status === 'awarded')).toHaveLength(1);
+    expect((await service.loadToday()).progress.totalXp).toBe(70);
+  });
+
+  it("unknown illness answer does not block training (only 'yes' pauses it)", async () => {
+    await service.createProfile({});
+    const id = (await service.loadToday()).today!.id;
+    await service.recordCheckin(id, { ...goodCheckin, illness: 'unknown' });
+    expect((await service.completeCore(id, 'training')).status).toBe('awarded');
   });
 });

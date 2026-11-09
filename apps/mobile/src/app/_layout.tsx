@@ -6,7 +6,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { AvciProvider } from '@/ui/avci-context';
 import { C, MIN_TOUCH, S } from '@/ui/theme';
 
-// Antrenman and Gelişim tabs arrive with M1/M3; no nonfunctional tabs are shown.
+// Gelişim tab arrives with M3; no nonfunctional tabs are shown.
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
@@ -19,6 +19,9 @@ export default function RootLayout() {
               <BottomBar>
                 <TabTrigger name="bugun" href="/" asChild>
                   <TabButton>Bugün</TabButton>
+                </TabTrigger>
+                <TabTrigger name="antrenman" href="/antrenman" asChild>
+                  <TabButton>Antrenman</TabButton>
                 </TabTrigger>
                 <TabTrigger name="karakter" href="/karakter" asChild>
                   <TabButton>Karakter</TabButton>
@@ -64,8 +67,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: S.sm,
   },
   tab: { flex: 1, minHeight: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' },
-  pill: { paddingVertical: S.sm, paddingHorizontal: S.lg, borderRadius: 20 },
+  pill: { paddingVertical: S.sm, paddingHorizontal: S.md, borderRadius: 20 },
   pillActive: { backgroundColor: C.surfaceRaised },
-  tabText: { color: C.textMuted, fontSize: 15, fontWeight: '600' },
+  tabText: { color: C.textMuted, fontSize: 14, fontWeight: '600' },
   tabTextActive: { color: C.text },
 });

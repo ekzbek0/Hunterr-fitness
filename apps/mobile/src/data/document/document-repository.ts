@@ -9,13 +9,18 @@ import type {
   AvciRepository,
   DailyCheckin,
   LedgerEntry,
+  PlanVersion,
   Profile,
   QuestSlot,
+  ScheduleMove,
+  SetLog,
   StoreTx,
   TaskDay,
+  TrainingProfile,
+  WorkoutSession,
 } from '../types';
 
-export const DOCUMENT_SCHEMA_VERSION = 1;
+export const DOCUMENT_SCHEMA_VERSION = 2;
 
 export interface AvciDocument {
   schemaVersion: number;
@@ -24,6 +29,12 @@ export interface AvciDocument {
   slots: QuestSlot[];
   checkins: DailyCheckin[];
   ledger: LedgerEntry[];
+  // v2 (M1)
+  trainingProfile: TrainingProfile | null;
+  plans: PlanVersion[];
+  moves: ScheduleMove[];
+  sessions: WorkoutSession[];
+  sets: SetLog[];
 }
 
 export interface StoredDocument {
@@ -39,14 +50,40 @@ export interface DocumentStorage {
 }
 
 export function emptyDocument(): AvciDocument {
-  return { schemaVersion: DOCUMENT_SCHEMA_VERSION, profile: null, taskDays: [], slots: [], checkins: [], ledger: [] };
+  return {
+    schemaVersion: DOCUMENT_SCHEMA_VERSION,
+    profile: null,
+    taskDays: [],
+    slots: [],
+    checkins: [],
+    ledger: [],
+    trainingProfile: null,
+    plans: [],
+    moves: [],
+    sessions: [],
+    sets: [],
+  };
 }
 
-function migrateDocument(doc: AvciDocument): AvciDocument {
+/** One version step at a time; every earlier record is carried over unchanged. */
+export function migrateDocument(input: AvciDocument): AvciDocument {
+  const doc = input as AvciDocument & Record<string, unknown>;
+  if (!Number.isInteger(doc.schemaVersion) || doc.schemaVersion < 1) {
+    throw new Error('Kayıtlı veri tanınmıyor (şema sürümü yok).');
+  }
   if (doc.schemaVersion > DOCUMENT_SCHEMA_VERSION) {
     throw new Error(`Kayıtlı veri bu uygulama sürümünden yeni (şema ${doc.schemaVersion}).`);
   }
-  // Future migrations go here, one version step at a time.
+  if (doc.schemaVersion === 1) {
+    // M0 -> M1: additive. Slots gain a nullable workout link.
+    doc.slots = doc.slots.map((s) => ({ ...s, workoutSessionId: s.workoutSessionId ?? null }));
+    doc.trainingProfile = null;
+    doc.plans = [];
+    doc.moves = [];
+    doc.sessions = [];
+    doc.sets = [];
+    doc.schemaVersion = 2;
+  }
   return doc;
 }
 
@@ -104,6 +141,101 @@ function docTx(doc: AvciDocument): StoreTx {
     },
     putCheckin: async (c) => {
       doc.checkins = doc.checkins.filter((x) => x.taskDayId !== c.taskDayId).concat(clone(c));
+    },
+    getTrainingProfile: async () => (doc.trainingProfile ? clone(doc.trainingProfile) : null),
+    putTrainingProfile: async (tp) => {
+      doc.trainingProfile = clone(tp);
+    },
+    getLatestPlan: async () => {
+      const p = [...doc.plans].sort((a, b) => b.sequence - a.sequence)[0];
+      return p ? clone(p) : null;
+    },
+    getPlan: async (id) => {
+      const p = doc.plans.find((x) => x.id === id);
+      return p ? clone(p) : null;
+    },
+    insertPlan: async (p) => {
+      if (doc.plans.some((x) => x.id === p.id || x.sequence === p.sequence)) throw new Error('UNIQUE constraint failed: plan_version');
+      doc.plans.push(clone(p));
+    },
+    listPlans: async (limit) => clone([...doc.plans].sort((a, b) => b.sequence - a.sequence).slice(0, limit)),
+    listMoves: async (weekStart) => clone(doc.moves.filter((m) => m.weekStart === weekStart)),
+    putMove: async (m) => {
+      doc.moves = doc.moves.filter((x) => x.slotId !== m.slotId).concat(clone(m));
+    },
+    getActiveSession: async () => {
+      const s = doc.sessions.find((x) => x.status === 'in-progress');
+      return s ? clone(s) : null;
+    },
+    getSession: async (id) => {
+      const s = doc.sessions.find((x) => x.id === id);
+      return s ? clone(s) : null;
+    },
+    insertSession: async (s) => {
+      if (doc.sessions.some((x) => x.id === s.id)) throw new Error('UNIQUE constraint failed: workout_session.id');
+      if (s.status === 'in-progress' && doc.sessions.some((x) => x.status === 'in-progress')) {
+        throw new Error('UNIQUE constraint failed: workout_one_active');
+      }
+      doc.sessions.push(clone(s));
+    },
+    updateSession: async (s) => {
+      const x = doc.sessions.find((y) => y.id === s.id);
+      if (!x) return;
+      if (
+        s.status === 'finished' &&
+        s.scheduleSlotId !== null &&
+        doc.sessions.some((y) => y.id !== s.id && y.status === 'finished' && y.scheduleSlotId === x.scheduleSlotId)
+      ) {
+        throw new Error('UNIQUE constraint failed: workout_one_finished_per_slot');
+      }
+      x.finishedAt = s.finishedAt;
+      x.status = s.status;
+      x.version = s.version;
+    },
+    listSessionsForWeek: async (weekStart) =>
+      clone(
+        doc.sessions
+          .filter((s) => s.scheduleSlotId?.startsWith(`${weekStart}:`))
+          .sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
+      ),
+    listRecentSessions: async (limit) =>
+      clone(
+        doc.sessions
+          .map((s, i) => ({ s, i }))
+          .sort((a, b) => b.s.startedAt.localeCompare(a.s.startedAt) || b.i - a.i)
+          .slice(0, limit)
+          .map((x) => x.s),
+      ),
+    listSets: async (sessionId) =>
+      clone(doc.sets.filter((x) => x.sessionId === sessionId).sort((a, b) => a.position - b.position)),
+    getSet: async (id) => {
+      const x = doc.sets.find((y) => y.id === id);
+      return x ? clone(x) : null;
+    },
+    insertSet: async (x) => {
+      if (doc.sets.some((y) => y.id === x.id)) throw new Error('UNIQUE constraint failed: set_log.id');
+      if (!doc.sessions.some((s) => s.id === x.sessionId)) throw new Error('FOREIGN KEY constraint failed: set_log');
+      doc.sets.push(clone(x));
+    },
+    updateSet: async (x) => {
+      const y = doc.sets.find((z) => z.id === x.id);
+      if (y) Object.assign(y, { kind: x.kind, reps: x.reps, load: x.load, unit: x.unit, rir: x.rir, updatedAt: x.updatedAt });
+    },
+    deleteSet: async (id) => {
+      doc.sets = doc.sets.filter((y) => y.id !== id);
+    },
+    listFinishedSetsForExercise: async (exerciseId, limit) => {
+      const sessions = new Map(doc.sessions.filter((s) => s.status === 'finished').map((s) => [s.id, s]));
+      return clone(
+        doc.sets
+          .filter((x) => x.exerciseId === exerciseId && sessions.has(x.sessionId))
+          .sort(
+            (a, b) =>
+              sessions.get(b.sessionId)!.startedAt.localeCompare(sessions.get(a.sessionId)!.startedAt) ||
+              a.position - b.position,
+          )
+          .slice(0, limit),
+      );
     },
     insertLedger: async (e) => {
       const key = ledgerKey(e);

@@ -8,6 +8,8 @@ interface AvciContextValue {
   status: 'loading' | 'ready' | 'error';
   error: string | null;
   snapshot: TodaySnapshot | null;
+  /** Increments after every reload so other screens (Antrenman) can re-read storage. */
+  dataVersion: number;
   service: AvciService | null;
   refresh(): Promise<void>;
   /** Runs a mutation, then reloads the snapshot from storage (never from React state). */
@@ -23,6 +25,7 @@ export function AvciProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AvciContextValue['status']>('loading');
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [dataVersion, setDataVersion] = useState(0);
   const serviceRef = useRef<AvciService | null>(null);
 
   useEffect(() => {
@@ -54,6 +57,7 @@ export function AvciProvider({ children }: { children: ReactNode }) {
     if (!svc) return;
     try {
       setSnapshot(await svc.loadToday());
+      setDataVersion((n) => n + 1);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -82,11 +86,11 @@ export function AvciProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<AvciContextValue>(
-    () => ({ status, error, snapshot, service, refresh, act, retry: () => {
+    () => ({ status, error, snapshot, dataVersion, service, refresh, act, retry: () => {
         setStatus('loading');
         setAttempt((n) => n + 1);
       } }),
-    [status, error, snapshot, service, refresh, act],
+    [status, error, snapshot, dataVersion, service, refresh, act],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
