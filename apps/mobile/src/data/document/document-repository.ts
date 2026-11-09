@@ -8,7 +8,11 @@
 import type {
   AvciRepository,
   DailyCheckin,
+  EquipmentIncrement,
   LedgerEntry,
+  ProgressionProposal,
+  WeeklyCycle,
+  WeeklyReview,
   PlanVersion,
   Profile,
   QuestSlot,
@@ -20,7 +24,7 @@ import type {
   WorkoutSession,
 } from '../types';
 
-export const DOCUMENT_SCHEMA_VERSION = 2;
+export const DOCUMENT_SCHEMA_VERSION = 3;
 
 export interface AvciDocument {
   schemaVersion: number;
@@ -35,6 +39,11 @@ export interface AvciDocument {
   moves: ScheduleMove[];
   sessions: WorkoutSession[];
   sets: SetLog[];
+  // v3 (M2)
+  weeklyCycles: WeeklyCycle[];
+  weeklyReviews: WeeklyReview[];
+  proposals: ProgressionProposal[];
+  increments: EquipmentIncrement[];
 }
 
 export interface StoredDocument {
@@ -62,6 +71,10 @@ export function emptyDocument(): AvciDocument {
     moves: [],
     sessions: [],
     sets: [],
+    weeklyCycles: [],
+    weeklyReviews: [],
+    proposals: [],
+    increments: [],
   };
 }
 
@@ -83,6 +96,16 @@ export function migrateDocument(input: AvciDocument): AvciDocument {
     doc.sessions = [];
     doc.sets = [];
     doc.schemaVersion = 2;
+  }
+  if (doc.schemaVersion === 2) {
+    // M1 -> M2: additive. Existing plans/sessions gain nullable M2 fields.
+    doc.plans = doc.plans.map((p) => ({ ...p, proposalId: p.proposalId ?? null }));
+    doc.sessions = doc.sessions.map((x) => ({ ...x, restStartedAt: x.restStartedAt ?? null, restDurationS: x.restDurationS ?? null }));
+    doc.weeklyCycles = [];
+    doc.weeklyReviews = [];
+    doc.proposals = [];
+    doc.increments = [];
+    doc.schemaVersion = 3;
   }
   return doc;
 }
@@ -198,6 +221,67 @@ function docTx(doc: AvciDocument): StoreTx {
           .filter((s) => s.scheduleSlotId?.startsWith(`${weekStart}:`))
           .sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
       ),
+    setRestTimer: async (sessionId, startedAt, durationS) => {
+      const x = doc.sessions.find((y) => y.id === sessionId);
+      if (x) Object.assign(x, { restStartedAt: startedAt, restDurationS: durationS });
+    },
+    getLatestWeeklyCycle: async () => {
+      const c = [...doc.weeklyCycles].sort((a, b) => b.sequence - a.sequence)[0];
+      return c ? clone(c) : null;
+    },
+    getWeeklyCycle: async (id) => {
+      const c = doc.weeklyCycles.find((x) => x.id === id);
+      return c ? clone(c) : null;
+    },
+    insertWeeklyCycle: async (c) => {
+      if (doc.weeklyCycles.some((x) => x.id === c.id || x.sequence === c.sequence || x.weekStart === c.weekStart)) {
+        throw new Error('UNIQUE constraint failed: weekly_cycle');
+      }
+      doc.weeklyCycles.push(clone(c));
+    },
+    closeWeeklyCycle: async (id, closedAt) => {
+      const c = doc.weeklyCycles.find((x) => x.id === id);
+      if (c && c.closedAt === null) c.closedAt = closedAt;
+    },
+    getWeeklyReview: async (id) => {
+      const r = doc.weeklyReviews.find((x) => x.weeklyCycleId === id);
+      return r ? clone(r) : null;
+    },
+    insertWeeklyReview: async (r) => {
+      if (doc.weeklyReviews.some((x) => x.weeklyCycleId === r.weeklyCycleId)) return 'conflict';
+      if (!doc.weeklyCycles.some((c) => c.id === r.weeklyCycleId)) throw new Error('FOREIGN KEY constraint failed: weekly_review');
+      doc.weeklyReviews.push(clone(r));
+      return 'inserted';
+    },
+    getProposal: async (id) => {
+      const p = doc.proposals.find((x) => x.id === id);
+      return p ? clone(p) : null;
+    },
+    listProposals: async (limit) =>
+      clone(
+        doc.proposals
+          .map((p, i) => ({ p, i }))
+          .sort((a, b) => b.p.createdAt.localeCompare(a.p.createdAt) || b.i - a.i)
+          .slice(0, limit)
+          .map((x) => x.p),
+      ),
+    insertProposal: async (p) => {
+      if (doc.proposals.some((x) => x.weeklyCycleId === p.weeklyCycleId && x.exerciseId === p.exerciseId && x.evidenceKey === p.evidenceKey)) {
+        return 'conflict';
+      }
+      if (doc.proposals.some((x) => x.id === p.id)) throw new Error('UNIQUE constraint failed: progression_proposal.id');
+      doc.proposals.push(clone(p));
+      return 'inserted';
+    },
+    updateProposal: async (p) => {
+      const x = doc.proposals.find((y) => y.id === p.id);
+      if (x) Object.assign(x, { status: p.status, decidedAt: p.decidedAt, resultPlanVersionId: p.resultPlanVersionId });
+    },
+    listIncrements: async () =>
+      clone([...doc.increments].sort((a, b) => a.key.localeCompare(b.key) || a.unit.localeCompare(b.unit))),
+    putIncrement: async (i) => {
+      doc.increments = doc.increments.filter((x) => !(x.key === i.key && x.unit === i.unit)).concat(clone(i));
+    },
     listRecentSessions: async (limit) =>
       clone(
         doc.sessions

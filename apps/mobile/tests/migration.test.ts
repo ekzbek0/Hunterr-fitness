@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createDocumentRepository, type AvciDocument } from '@/data/document/document-repository';
+import { createDocumentRepository, DOCUMENT_SCHEMA_VERSION, type AvciDocument } from '@/data/document/document-repository';
 import { indexedDbStorage } from '@/data/document/indexeddb-storage';
 import { LATEST_SCHEMA_VERSION, MIGRATIONS } from '@/data/sqlite/migrations';
 import { createSqliteRepository } from '@/data/sqlite/sqlite-repository';
@@ -154,7 +154,7 @@ describe('IndexedDB document v1 (M0) -> v2 (M1)', () => {
     await repo.close();
 
     const stored = await indexedDbStorage(factory, 'avci').load();
-    expect(stored!.doc.schemaVersion).toBe(2);
+    expect(stored!.doc.schemaVersion).toBe(DOCUMENT_SCHEMA_VERSION);
     expect(stored!.doc.ledger.map((e) => e.id)).toContain('l1');
   });
 

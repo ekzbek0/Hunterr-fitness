@@ -121,6 +121,56 @@ export const MIGRATIONS: readonly { version: number; sql: string }[] = [
       CREATE INDEX set_log_exercise ON set_log(exercise_id, logged_at);
     `,
   },
+  {
+    // M2: weekly cycle + review, progression proposals (audit), confirmed
+    // equipment increments, rest timer. Additive only: M0/M1 rows untouched.
+    version: 3,
+    sql: `
+      ALTER TABLE plan_version ADD COLUMN proposal_id TEXT;
+      ALTER TABLE workout_session ADD COLUMN rest_started_at TEXT;
+      ALTER TABLE workout_session ADD COLUMN rest_duration_s INTEGER;
+      CREATE TABLE weekly_cycle (
+        id TEXT PRIMARY KEY NOT NULL,
+        sequence INTEGER NOT NULL UNIQUE,
+        week_start TEXT NOT NULL UNIQUE,
+        week_end TEXT NOT NULL,
+        timezone TEXT NOT NULL,
+        opened_at TEXT NOT NULL,
+        closed_at TEXT,
+        multiplier_halves INTEGER NOT NULL CHECK (multiplier_halves IN (1,2,3,4))
+      );
+      CREATE TABLE weekly_review (
+        weekly_cycle_id TEXT PRIMARY KEY NOT NULL REFERENCES weekly_cycle(id),
+        completed_at TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        proposal_ids TEXT NOT NULL
+      );
+      CREATE TABLE progression_proposal (
+        id TEXT PRIMARY KEY NOT NULL,
+        weekly_cycle_id TEXT NOT NULL REFERENCES weekly_cycle(id),
+        exercise_id TEXT NOT NULL,
+        plan_version_id TEXT NOT NULL REFERENCES plan_version(id),
+        evidence_key TEXT NOT NULL,
+        evidence_session_ids TEXT NOT NULL,
+        before_json TEXT NOT NULL,
+        after_json TEXT NOT NULL,
+        increment_json TEXT NOT NULL,
+        percent_hundredths INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending','accepted','declined','stale')),
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        result_plan_version_id TEXT REFERENCES plan_version(id),
+        UNIQUE (weekly_cycle_id, exercise_id, evidence_key)
+      );
+      CREATE TABLE equipment_increment (
+        key TEXT NOT NULL,
+        unit TEXT NOT NULL CHECK (unit IN ('kg','lb')),
+        value REAL NOT NULL CHECK (value > 0),
+        confirmed_at TEXT NOT NULL,
+        PRIMARY KEY (key, unit)
+      );
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

@@ -3,13 +3,14 @@ import { Text, View } from 'react-native';
 
 import type { Program, ProgramChange } from '@/domain/training/program';
 import type { SetInput } from '@/domain/training/workout';
-import type { CompletionResult, TrainingResult, TrainingSnapshot } from '@/services/avci-service';
+import type { CompletionResult, TrainingResult, TrainingSnapshot, WeeklyReviewSnapshot } from '@/services/avci-service';
 import { useAvci } from '@/ui/avci-context';
 import { Button, Card, Screen, StorageGate, T } from '@/ui/components';
-import { PROGRAM_ERROR_LABELS, REASON_LABELS, TRAINING_REJECT_LABELS } from '@/ui/labels';
+import { describeConflict, PROGRAM_ERROR_LABELS, REASON_LABELS, TRAINING_REJECT_LABELS } from '@/ui/labels';
 import { C } from '@/ui/theme';
 import { TrainingProfileForm } from '@/ui/training/profile-form';
 import { ExposureNote, ProgramEditor, ProposalPreview } from '@/ui/training/program-views';
+import { WeeklyReviewView } from '@/ui/training/weekly-views';
 import { WeekView, WorkoutLogger } from '@/ui/training/workout-views';
 
 export default function TrainingScreen() {
@@ -22,7 +23,7 @@ export default function TrainingScreen() {
 
 const JOINT_PAIN_NOTICE = `${REASON_LABELS['joint-pain']} Ağrıyan bölgeyi zorlayan hareketleri atla, yerine ağrılı bir hareket koyma; planlı toparlanma da aynı ödülü verir.`;
 
-type Mode = 'main' | 'edit-profile' | 'edit-program' | 'proposal';
+type Mode = 'main' | 'edit-profile' | 'edit-program' | 'proposal' | 'weekly';
 interface Proposal {
   program: Program;
   changes: ProgramChange[];
@@ -30,8 +31,17 @@ interface Proposal {
   skippedPatterns: string[];
 }
 
-const rejectText = (r: TrainingResult<unknown>) =>
-  r.status === 'rejected' ? (TRAINING_REJECT_LABELS[r.reason] ?? 'İşlem yapılamadı.') : null;
+const rejectText = (r: TrainingResult<unknown>) => {
+  if (r.status !== 'rejected') return null;
+  const base = TRAINING_REJECT_LABELS[r.reason] ?? 'İşlem yapılamadı.';
+  return r.conflicts?.length ? `${base} ${r.conflicts.map(describeConflict).join(' ')}` : base;
+};
+
+function weeklyRewardText(r: CompletionResult): string {
+  if (r.status === 'awarded') return `Haftalık değerlendirme tamamlandı: +${r.entry.awardedXp} XP.`;
+  if (r.status === 'already-completed') return 'Bu haftanın değerlendirmesi zaten tamamlanmıştı; ödül bir kez verilir.';
+  return TRAINING_REJECT_LABELS[r.reason] ?? 'İşlem yapılamadı.';
+}
 
 function rewardText(reward: CompletionResult): string {
   if (reward.status === 'awarded') return `Antrenman kaydedildi. Ana görev tamamlandı: +${reward.entry.awardedXp} XP.`;
@@ -47,6 +57,7 @@ function Training() {
   const [message, setMessage] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [weekly, setWeekly] = useState<WeeklyReviewSnapshot | null>(null);
 
   useEffect(() => {
     if (!service) return;
@@ -76,6 +87,25 @@ function Training() {
     },
     [act, busy],
   );
+
+  const openWeekly = useCallback(async () => {
+    if (!service) return;
+    const r = await service.loadWeeklyReview();
+    if (r.status === 'ok') {
+      setWeekly(r.value);
+      setMode('weekly');
+    } else setMessage(rejectText(r));
+  }, [service]);
+
+  // Re-read the review after every stored change while it is open (decisions, XP, increments).
+  useEffect(() => {
+    if (mode !== 'weekly' || !service) return;
+    let cancelled = false;
+    service.loadWeeklyReview().then((r) => !cancelled && r.status === 'ok' && setWeekly(r.value));
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, service, dataVersion]);
 
   const openProposal = useCallback(async () => {
     if (!service) return;
@@ -208,6 +238,13 @@ function Training() {
             if (r?.status === 'ok') setMessage(rewardText(r.value.reward));
             else if (r) setMessage(rejectText(r));
           }}
+          onStartRest={async (seconds) => {
+            const r = await run(() => service.startRest(sessionId, seconds));
+            if (r?.status === 'rejected') setMessage(rejectText(r));
+          }}
+          onClearRest={async () => {
+            await run(() => service.clearRest(sessionId));
+          }}
           onAbandon={async () => {
             const r = await run(() => service.abandonWorkout(sessionId));
             setMessage(r?.status === 'ok' ? 'Antrenman bırakıldı. Kaydedilen setler saklandı; ceza veya borç yok.' : r ? rejectText(r) : null);
@@ -217,7 +254,40 @@ function Training() {
     );
   }
 
-  // 4) Edit the weekly program.
+  // 4) Weekly review with progression proposals.
+  if (mode === 'weekly' && weekly) {
+    return (
+      <Screen title="Haftalık değerlendirme">
+        {messageView}
+        <WeeklyReviewView
+          review={weekly}
+          busy={busy}
+          onBack={() => setMode('main')}
+          onComplete={async () => {
+            const r = (await run(async () => {
+              const c = await service.completeWeeklyReview(weekly.cycle.id);
+              return { status: 'ok', value: c } as TrainingResult<CompletionResult>;
+            })) as TrainingResult<CompletionResult> | null;
+            if (r?.status === 'ok') setMessage(weeklyRewardText(r.value));
+          }}
+          onAccept={async (id, techniqueConfirmed) => {
+            const r = await run(() => service.acceptProposal(id, { techniqueConfirmed }));
+            setMessage(r?.status === 'ok' ? 'Öneri kabul edildi: yeni program sürümü kaydedildi.' : r ? rejectText(r) : null);
+          }}
+          onDecline={async (id) => {
+            const r = await run(() => service.declineProposal(id));
+            setMessage(r?.status === 'ok' ? 'Öneri reddedildi; plan değişmedi. Kararın kaydedildi.' : r ? rejectText(r) : null);
+          }}
+          onIncrement={async (key, unit, value) => {
+            const r = await run(() => service.confirmIncrement(key, unit, value));
+            setMessage(r?.status === 'ok' ? 'Ekipman artışı doğrulandı.' : r ? rejectText(r) : null);
+          }}
+        />
+      </Screen>
+    );
+  }
+
+  // 5) Edit the weekly program.
   if (mode === 'edit-program') {
     const plan = snap.plan;
     return (
@@ -226,6 +296,14 @@ function Training() {
           initial={plan.program}
           facts={snap.trainingProfile}
           onCancel={() => setMode('main')}
+          onPreview={async (program) => {
+            const r = await service.previewProgram(program);
+            if (r.status === 'ok') return r.value;
+            if (r.reason === 'invalid' && r.detail && r.detail in PROGRAM_ERROR_LABELS) {
+              return PROGRAM_ERROR_LABELS[r.detail as keyof typeof PROGRAM_ERROR_LABELS];
+            }
+            return rejectText(r) ?? 'Önizleme yapılamadı.';
+          }}
           onAccept={async (program) => {
             const r = await run(() => service.acceptProgram({ baseVersionId: plan.id, program, source: 'user-edit' }));
             if (r?.status === 'ok') {
@@ -281,6 +359,18 @@ function Training() {
           setMessage(r?.status === 'ok' ? 'Antrenman taşındı. Kaçırılan veya taşınan gün borç oluşturmaz.' : r ? rejectText(r) : null);
         }}
       />
+      {snap.weekly && (
+        <Card accent={snap.weekly.reviewDone ? C.success : C.violet}>
+          <Text style={T.h3}>Haftalık değerlendirme</Text>
+          <Text style={T.muted} testID="weekly-status">
+            {snap.weekly.reviewDone
+              ? 'Bu hafta tamamlandı.'
+              : 'Haftanı gözden geçir; yük önerilerini gör. Bu hafta bir kez XP verir.'}
+            {snap.weekly.pendingProposals > 0 ? ` Karar bekleyen öneri: ${snap.weekly.pendingProposals}.` : ''}
+          </Text>
+          <Button label="Haftalık değerlendirmeyi aç" variant="secondary" onPress={openWeekly} />
+        </Card>
+      )}
       <Card>
         <Text style={T.h3}>Program</Text>
         <ExposureNote program={snap.plan.program} />

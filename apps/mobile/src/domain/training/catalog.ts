@@ -21,8 +21,11 @@ export type Pattern =
   | 'calves'
   | 'core';
 
-/** total: whole implement; per-dumbbell: one hand's dumbbell; bodyweight: added load only. */
-export type LoadConvention = 'total' | 'per-dumbbell' | 'bodyweight';
+/**
+ * total: whole implement; per-dumbbell: one hand's dumbbell; bodyweight: added
+ * load only; band: elastic resistance, never expressed or progressed as kg/lb.
+ */
+export type LoadConvention = 'total' | 'per-dumbbell' | 'bodyweight' | 'band';
 
 export interface Exercise {
   id: string;
@@ -55,7 +58,7 @@ export const EXERCISES: readonly Exercise[] = [
     howTo: 'Bir el ve diz sehpada. Dambılı kalçana doğru çek; gövdeni döndürme.' },
   { id: 'cable-row', name: 'Kablolu oturarak row', pattern: 'horizontal-pull', equipment: ['cable'], loadConvention: 'total', restrictedBy: [],
     howTo: 'Göğüs dik, tutamağı karnına çek; geri bırakırken omuzları öne savurma.' },
-  { id: 'band-row', name: 'Lastikle row', pattern: 'horizontal-pull', equipment: ['bands'], loadConvention: 'bodyweight', restrictedBy: [],
+  { id: 'band-row', name: 'Lastikle row', pattern: 'horizontal-pull', equipment: ['bands'], loadConvention: 'band', restrictedBy: [],
     howTo: 'Lastiği sabit bir noktaya bağla; dirsekleri geriye çekerek kürek kemiklerini birleştir.' },
   { id: 'pull-up', name: 'Barfiks', pattern: 'vertical-pull', equipment: ['pullup-bar'], loadConvention: 'bodyweight', restrictedBy: [],
     howTo: 'Omuzları aşağı çekerek başla; göğsü bara yaklaştır. Gerekirse lastik desteği kullan.' },
@@ -87,7 +90,7 @@ export const EXERCISES: readonly Exercise[] = [
     howTo: 'Eller sehpada, kalça sehpaya yakın; dirsekleri geriye bükerek in, omuz ağrısı olursa aralığı kısalt.' },
   { id: 'db-curl', name: 'Dambıl biceps curl', pattern: 'biceps', equipment: ['dumbbell'], loadConvention: 'per-dumbbell', restrictedBy: [],
     howTo: 'Dirsekler gövde yanında; dambılları savurmadan kaldır ve yavaş indir.' },
-  { id: 'band-curl', name: 'Lastikle biceps curl', pattern: 'biceps', equipment: ['bands'], loadConvention: 'bodyweight', restrictedBy: [],
+  { id: 'band-curl', name: 'Lastikle biceps curl', pattern: 'biceps', equipment: ['bands'], loadConvention: 'band', restrictedBy: [],
     howTo: 'Lastiğin ortasına bas; dirsekleri sabit tutarak çek.' },
   { id: 'db-lateral-raise', name: 'Dambıl yana açış', pattern: 'lateral-raise', equipment: ['dumbbell'], loadConvention: 'per-dumbbell', restrictedBy: [],
     howTo: 'Dirsekler hafif bükük; dambılları omuz hizasına kadar yana kaldır.' },
@@ -114,4 +117,22 @@ export function alternativesFor(
   const ex = exerciseById(exerciseId);
   if (!ex) return [];
   return EXERCISES.filter((e) => e.pattern === ex.pattern && e.id !== ex.id && isAvailable(e, equipment, limitations));
+}
+
+/**
+ * Which user-confirmed equipment increment applies to an exercise. Dumbbell
+ * increments are the step between single dumbbells (applies per dumbbell).
+ * Bands have no load increment: resistance is not kilograms.
+ */
+export const INCREMENT_KEYS = ['barbell', 'dumbbell', 'machine', 'cable', 'added-weight'] as const;
+export type IncrementKey = (typeof INCREMENT_KEYS)[number];
+
+export function incrementKeyFor(ex: Exercise): IncrementKey | null {
+  if (ex.loadConvention === 'band') return null;
+  if (ex.equipment.includes('barbell')) return 'barbell';
+  if (ex.equipment.includes('dumbbell')) return 'dumbbell';
+  if (ex.equipment.includes('machine')) return 'machine';
+  if (ex.equipment.includes('cable')) return 'cable';
+  if (ex.loadConvention === 'bodyweight') return 'added-weight';
+  return null;
 }

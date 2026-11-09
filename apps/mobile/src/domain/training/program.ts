@@ -6,6 +6,13 @@
  */
 import { EXERCISES, exerciseById, isAvailable, type Pattern } from './catalog';
 import type { Equipment, Limitation, TrainingProfileFacts, Weekday } from './profile';
+import type { LoadUnit } from './workout';
+
+/** Accepted load target for an exercise, in the exercise's load convention (total / per dumbbell / added). */
+export interface LoadTarget {
+  value: number;
+  unit: LoadUnit;
+}
 
 export interface PrescribedExercise {
   exerciseId: string;
@@ -14,6 +21,11 @@ export interface PrescribedExercise {
   repMax: number;
   /** Target reps-in-reserve; null = not set. A product default, not a medical value. */
   targetRir: number | null;
+  /**
+   * M2: load target written only by an accepted progression proposal (or kept
+   * from an earlier version). Absent/null = the user chooses the load.
+   */
+  targetLoad?: LoadTarget | null;
 }
 
 export interface ProgramDay {
@@ -34,6 +46,7 @@ export const LIMITS = {
   repsMin: 1,
   repsMax: 30,
   rirMax: 5,
+  loadMax: 1000,
   exercisesPerDayMax: 10,
   titleMax: 40,
 } as const;
@@ -49,7 +62,8 @@ export type ProgramErrorCode =
   | 'duplicate-exercise'
   | 'sets'
   | 'reps'
-  | 'rir';
+  | 'rir'
+  | 'target-load';
 
 export class ProgramError extends RangeError {
   constructor(
@@ -141,6 +155,20 @@ export function generateProgram(facts: TrainingProfileFacts): GeneratedProgram {
 
 const isInt = (v: unknown, min: number, max: number) => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 
+function validateTargetLoad(t: LoadTarget | null | undefined, convention: string, dayId: string): LoadTarget | null {
+  if (t === null || t === undefined) return null;
+  // Band resistance is never expressed as kilograms.
+  if (convention === 'band') throw new ProgramError('target-load', dayId);
+  if (typeof t !== 'object' || (t.unit !== 'kg' && t.unit !== 'lb')) throw new ProgramError('target-load', dayId);
+  if (typeof t.value !== 'number' || !Number.isFinite(t.value) || t.value <= 0 || t.value > LIMITS.loadMax) {
+    throw new ProgramError('target-load', dayId);
+  }
+  return { value: Math.round(t.value * 100) / 100, unit: t.unit };
+}
+
+const sameTarget = (a: LoadTarget | null | undefined, b: LoadTarget | null | undefined) =>
+  (a ?? null) === (b ?? null) || (!!a && !!b && a.value === b.value && a.unit === b.unit);
+
 /** Throws ProgramError on the first violation; returns a normalised deep copy. */
 export function validateProgram(
   program: Program,
@@ -174,7 +202,8 @@ export function validateProgram(
         throw new ProgramError('reps', d.id);
       }
       if (p.targetRir !== null && !isInt(p.targetRir, 0, LIMITS.rirMax)) throw new ProgramError('rir', d.id);
-      return { exerciseId: ex.id, sets: p.sets, repMin: p.repMin, repMax: p.repMax, targetRir: p.targetRir };
+      const targetLoad = validateTargetLoad(p.targetLoad, ex.loadConvention, d.id);
+      return { exerciseId: ex.id, sets: p.sets, repMin: p.repMin, repMax: p.repMax, targetRir: p.targetRir, targetLoad };
     });
     return { id: d.id, title, weekday: d.weekday as Weekday, exercises };
   });
@@ -188,6 +217,8 @@ export type ProgramChange =
   | { kind: 'title'; dayId: string; from: string; to: string }
   | { kind: 'exercise-added'; dayId: string; title: string; exerciseId: string }
   | { kind: 'exercise-removed'; dayId: string; title: string; exerciseId: string }
+  /** Same exercises, different order within a day. Sessions already started keep their own snapshot. */
+  | { kind: 'exercise-order'; dayId: string; title: string; from: string[]; to: string[] }
   | {
       kind: 'prescription';
       dayId: string;
@@ -220,11 +251,30 @@ export function diffPrograms(before: Program, after: Program): ProgramChange[] {
       const old = pe.get(e.exerciseId);
       if (!old) {
         out.push({ kind: 'exercise-added', dayId: d.id, title: d.title, exerciseId: e.exerciseId });
-      } else if (old.sets !== e.sets || old.repMin !== e.repMin || old.repMax !== e.repMax || old.targetRir !== e.targetRir) {
+      } else if (
+        old.sets !== e.sets ||
+        old.repMin !== e.repMin ||
+        old.repMax !== e.repMax ||
+        old.targetRir !== e.targetRir ||
+        !sameTarget(old.targetLoad, e.targetLoad)
+      ) {
         const { exerciseId: _a, ...from } = old;
         const { exerciseId: _b, ...to } = e;
-        out.push({ kind: 'prescription', dayId: d.id, title: d.title, exerciseId: e.exerciseId, from, to });
+        out.push({
+          kind: 'prescription',
+          dayId: d.id,
+          title: d.title,
+          exerciseId: e.exerciseId,
+          from: { ...from, targetLoad: from.targetLoad ?? null },
+          to: { ...to, targetLoad: to.targetLoad ?? null },
+        });
       }
+    }
+    // Order of the exercises kept on both sides (additions/removals alone are not a reorder).
+    const fromOrder = p.exercises.map((e) => e.exerciseId).filter((id) => ne.has(id));
+    const toOrder = d.exercises.map((e) => e.exerciseId).filter((id) => pe.has(id));
+    if (fromOrder.some((id, i) => id !== toOrder[i])) {
+      out.push({ kind: 'exercise-order', dayId: d.id, title: d.title, from: fromOrder, to: toOrder });
     }
   }
   return out;

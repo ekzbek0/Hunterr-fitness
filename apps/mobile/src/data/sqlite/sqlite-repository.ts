@@ -14,7 +14,11 @@ import type {
   QuestSlot,
   ScheduleMove,
   ScopeKind,
+  EquipmentIncrement,
+  ProgressionProposal,
   SetLog,
+  WeeklyCycle,
+  WeeklyReview,
   StoreTx,
   TaskDay,
   TrainingProfile,
@@ -73,6 +77,45 @@ const toPlan = (r: Row): PlanVersion => ({
   createdAt: str(r.created_at),
   acceptedAt: str(r.accepted_at),
   program: JSON.parse(str(r.program)) as Program,
+  proposalId: optStr(r.proposal_id),
+});
+const toCycle = (r: Row): WeeklyCycle => ({
+  id: str(r.id),
+  sequence: num(r.sequence),
+  weekStart: str(r.week_start),
+  weekEnd: str(r.week_end),
+  timezone: str(r.timezone),
+  openedAt: str(r.opened_at),
+  closedAt: optStr(r.closed_at),
+  multiplierHalves: num(r.multiplier_halves) as MultiplierHalves,
+});
+const toReview = (r: Row): WeeklyReview => ({
+  weeklyCycleId: str(r.weekly_cycle_id),
+  completedAt: str(r.completed_at),
+  summary: JSON.parse(str(r.summary)) as WeeklyReview['summary'],
+  proposalIds: JSON.parse(str(r.proposal_ids)) as string[],
+});
+const toProposal = (r: Row): ProgressionProposal => ({
+  id: str(r.id),
+  weeklyCycleId: str(r.weekly_cycle_id),
+  exerciseId: str(r.exercise_id),
+  planVersionId: str(r.plan_version_id),
+  evidenceKey: str(r.evidence_key),
+  evidenceSessionIds: JSON.parse(str(r.evidence_session_ids)) as string[],
+  before: JSON.parse(str(r.before_json)) as ProgressionProposal['before'],
+  after: JSON.parse(str(r.after_json)) as ProgressionProposal['after'],
+  increment: JSON.parse(str(r.increment_json)) as ProgressionProposal['increment'],
+  percentHundredths: num(r.percent_hundredths),
+  status: str(r.status) as ProgressionProposal['status'],
+  createdAt: str(r.created_at),
+  decidedAt: optStr(r.decided_at),
+  resultPlanVersionId: optStr(r.result_plan_version_id),
+});
+const toIncrement = (r: Row): EquipmentIncrement => ({
+  key: str(r.key) as EquipmentIncrement['key'],
+  unit: str(r.unit) as LoadUnit,
+  value: num(r.value),
+  confirmedAt: str(r.confirmed_at),
 });
 const toMove = (r: Row): ScheduleMove => ({
   slotId: str(r.slot_id),
@@ -92,6 +135,8 @@ const toSession = (r: Row): WorkoutSession => ({
   finishedAt: optStr(r.finished_at),
   status: str(r.status) as WorkoutStatus,
   version: num(r.version),
+  restStartedAt: optStr(r.rest_started_at),
+  restDurationS: r.rest_duration_s === null || r.rest_duration_s === undefined ? null : num(r.rest_duration_s),
 });
 const toSet = (r: Row): SetLog => ({
   id: str(r.id),
@@ -233,9 +278,9 @@ function sqlTx(d: SqlDriver): StoreTx {
     },
     async insertPlan(p) {
       await d.run(
-        `INSERT INTO plan_version (id, parent_id, sequence, source, reason, created_at, accepted_at, program)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [p.id, p.parentId, p.sequence, p.source, p.reason, p.createdAt, p.acceptedAt, JSON.stringify(p.program)],
+        `INSERT INTO plan_version (id, parent_id, sequence, source, reason, created_at, accepted_at, program, proposal_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [p.id, p.parentId, p.sequence, p.source, p.reason, p.createdAt, p.acceptedAt, JSON.stringify(p.program), p.proposalId],
       );
     },
     async listPlans(limit) {
@@ -264,10 +309,10 @@ function sqlTx(d: SqlDriver): StoreTx {
     async insertSession(s) {
       await d.run(
         `INSERT INTO workout_session (id, task_day_id, schedule_slot_id, plan_version_id, program_day_id, title, exercises,
-           started_at, finished_at, status, version)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           started_at, finished_at, status, version, rest_started_at, rest_duration_s)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [s.id, s.taskDayId, s.scheduleSlotId, s.planVersionId, s.programDayId, s.title, JSON.stringify(s.exercises),
-          s.startedAt, s.finishedAt, s.status, s.version],
+          s.startedAt, s.finishedAt, s.status, s.version, s.restStartedAt, s.restDurationS],
       );
     },
     async updateSession(s) {
@@ -285,6 +330,80 @@ function sqlTx(d: SqlDriver): StoreTx {
         [weekStart],
       );
       return rows.map(toSession);
+    },
+    async setRestTimer(sessionId, startedAt, durationS) {
+      await d.run('UPDATE workout_session SET rest_started_at = ?, rest_duration_s = ? WHERE id = ?', [startedAt, durationS, sessionId]);
+    },
+    async getLatestWeeklyCycle() {
+      const r = await d.first<Row>('SELECT * FROM weekly_cycle ORDER BY sequence DESC LIMIT 1');
+      return r ? toCycle(r) : null;
+    },
+    async getWeeklyCycle(id) {
+      const r = await d.first<Row>('SELECT * FROM weekly_cycle WHERE id = ?', [id]);
+      return r ? toCycle(r) : null;
+    },
+    async insertWeeklyCycle(c) {
+      await d.run(
+        `INSERT INTO weekly_cycle (id, sequence, week_start, week_end, timezone, opened_at, closed_at, multiplier_halves)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [c.id, c.sequence, c.weekStart, c.weekEnd, c.timezone, c.openedAt, c.closedAt, c.multiplierHalves],
+      );
+    },
+    async closeWeeklyCycle(id, closedAt) {
+      // Boundaries, timezone and multiplier are immutable; only closing is allowed, once.
+      await d.run('UPDATE weekly_cycle SET closed_at = ? WHERE id = ? AND closed_at IS NULL', [closedAt, id]);
+    },
+    async getWeeklyReview(id) {
+      const r = await d.first<Row>('SELECT * FROM weekly_review WHERE weekly_cycle_id = ?', [id]);
+      return r ? toReview(r) : null;
+    },
+    async insertWeeklyReview(w) {
+      const res = await d.run(
+        `INSERT INTO weekly_review (weekly_cycle_id, completed_at, summary, proposal_ids) VALUES (?, ?, ?, ?)
+         ON CONFLICT(weekly_cycle_id) DO NOTHING`,
+        [w.weeklyCycleId, w.completedAt, JSON.stringify(w.summary), JSON.stringify(w.proposalIds)],
+      );
+      return res.changes === 1 ? 'inserted' : 'conflict';
+    },
+    async getProposal(id) {
+      const r = await d.first<Row>('SELECT * FROM progression_proposal WHERE id = ?', [id]);
+      return r ? toProposal(r) : null;
+    },
+    async listProposals(limit) {
+      const rows = await d.all<Row>('SELECT * FROM progression_proposal ORDER BY created_at DESC, rowid DESC LIMIT ?', [limit]);
+      return rows.map(toProposal);
+    },
+    async insertProposal(p) {
+      const res = await d.run(
+        `INSERT INTO progression_proposal (id, weekly_cycle_id, exercise_id, plan_version_id, evidence_key, evidence_session_ids,
+           before_json, after_json, increment_json, percent_hundredths, status, created_at, decided_at, result_plan_version_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(weekly_cycle_id, exercise_id, evidence_key) DO NOTHING`,
+        [p.id, p.weeklyCycleId, p.exerciseId, p.planVersionId, p.evidenceKey, JSON.stringify(p.evidenceSessionIds),
+          JSON.stringify(p.before), JSON.stringify(p.after), JSON.stringify(p.increment), p.percentHundredths, p.status,
+          p.createdAt, p.decidedAt, p.resultPlanVersionId],
+      );
+      return res.changes === 1 ? 'inserted' : 'conflict';
+    },
+    async updateProposal(p) {
+      // Only the decision fields change; the proposal content is the audit record.
+      await d.run('UPDATE progression_proposal SET status = ?, decided_at = ?, result_plan_version_id = ? WHERE id = ?', [
+        p.status,
+        p.decidedAt,
+        p.resultPlanVersionId,
+        p.id,
+      ]);
+    },
+    async listIncrements() {
+      const rows = await d.all<Row>('SELECT * FROM equipment_increment ORDER BY key, unit');
+      return rows.map(toIncrement);
+    },
+    async putIncrement(i) {
+      await d.run(
+        `INSERT INTO equipment_increment (key, unit, value, confirmed_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(key, unit) DO UPDATE SET value = excluded.value, confirmed_at = excluded.confirmed_at`,
+        [i.key, i.unit, i.value, i.confirmedAt],
+      );
     },
     async listRecentSessions(limit) {
       const rows = await d.all<Row>('SELECT * FROM workout_session ORDER BY started_at DESC, rowid DESC LIMIT ?', [limit]);

@@ -111,3 +111,35 @@ export function validateMove(week: readonly PlannedSession[], slotId: string, to
   if (week.some((x) => x.slotId !== slotId && x.date === target)) return 'occupied';
   return null;
 }
+
+export interface ScheduleConflict {
+  date: string;
+  sessions: { slotId: string; programDayId: string; title: string; plannedDate: string; moved: boolean }[];
+}
+
+/**
+ * Dates from `today` on where the effective week (program days + existing
+ * moves) holds more than one session. A plan edit producing any conflict must
+ * be refused and shown; sessions are never moved or dropped silently.
+ * Past dates are history and cannot be started, so they are not checked.
+ */
+export function findScheduleConflicts(week: readonly PlannedSession[], today: string): ScheduleConflict[] {
+  const byDate = new Map<string, PlannedSession[]>();
+  for (const s of week) {
+    if (s.date < today) continue;
+    byDate.set(s.date, [...(byDate.get(s.date) ?? []), s]);
+  }
+  return [...byDate.entries()]
+    .filter(([, list]) => list.length > 1)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, list]) => ({
+      date,
+      sessions: list.map((s) => ({
+        slotId: s.slotId,
+        programDayId: s.programDayId,
+        title: s.title,
+        plannedDate: s.plannedDate,
+        moved: s.moved,
+      })),
+    }));
+}

@@ -1,7 +1,8 @@
 import type { MultiplierHalves } from '@/domain/game/economy';
 import type { CoreResolution, SlotKind } from '@/domain/game/quests';
-import type { LoadConvention } from '@/domain/training/catalog';
+import type { IncrementKey, LoadConvention } from '@/domain/training/catalog';
 import type { PrescribedExercise, Program } from '@/domain/training/program';
+import type { LoadPrescription } from '@/domain/training/progression';
 import type { TrainingProfileFacts } from '@/domain/training/profile';
 import type { TriState } from '@/domain/training/readiness';
 import type { ScheduleMove } from '@/domain/training/schedule';
@@ -86,6 +87,8 @@ export interface PlanVersion {
   createdAt: string;
   acceptedAt: string;
   program: Program;
+  /** M2: set when this version applies an accepted progression proposal. */
+  proposalId: string | null;
 }
 
 export type WorkoutStatus = 'in-progress' | 'finished' | 'abandoned';
@@ -104,6 +107,9 @@ export interface WorkoutSession {
   finishedAt: string | null;
   status: WorkoutStatus;
   version: number;
+  /** M2 rest timer: start timestamp + chosen duration; remaining time is derived from the clock. */
+  restStartedAt: string | null;
+  restDurationS: number | null;
 }
 
 export interface SetLog {
@@ -120,6 +126,63 @@ export interface SetLog {
   rir: number | null;
   loggedAt: string;
   updatedAt: string;
+}
+
+/** M2: one persisted Monday-based week. Boundaries, timezone and multiplier are captured at open. */
+export interface WeeklyCycle {
+  id: string;
+  sequence: number;
+  weekStart: string;
+  weekEnd: string;
+  timezone: string;
+  openedAt: string;
+  closedAt: string | null;
+  multiplierHalves: MultiplierHalves;
+}
+
+export interface WeeklySummary {
+  planned: number;
+  done: number;
+  missed: number;
+  workSets: number;
+  checkins: number;
+  recoveryDays: number;
+}
+
+export interface WeeklyReview {
+  weeklyCycleId: string;
+  completedAt: string;
+  summary: WeeklySummary;
+  proposalIds: string[];
+}
+
+export type ProposalStatus = 'pending' | 'accepted' | 'declined' | 'stale';
+
+/** Audit record of a deterministic progression proposal and the user's decision. */
+export interface ProgressionProposal {
+  id: string;
+  weeklyCycleId: string;
+  exerciseId: string;
+  /** Plan version the proposal was computed against. */
+  planVersionId: string;
+  evidenceKey: string;
+  evidenceSessionIds: string[];
+  before: LoadPrescription;
+  after: LoadPrescription;
+  increment: { key: IncrementKey; unit: LoadUnit; value: number };
+  percentHundredths: number;
+  status: ProposalStatus;
+  createdAt: string;
+  decidedAt: string | null;
+  /** Plan version created on acceptance. */
+  resultPlanVersionId: string | null;
+}
+
+export interface EquipmentIncrement {
+  key: IncrementKey;
+  unit: LoadUnit;
+  value: number;
+  confirmedAt: string;
 }
 
 /** Primitive operations available inside one atomic transaction. */
@@ -158,6 +221,7 @@ export interface StoreTx {
   updateSession(s: WorkoutSession): Promise<void>;
   /** Sessions whose schedule slot belongs to the given week. */
   listSessionsForWeek(weekStart: string): Promise<WorkoutSession[]>;
+  setRestTimer(sessionId: string, startedAt: string | null, durationS: number | null): Promise<void>;
   listRecentSessions(limit: number): Promise<WorkoutSession[]>;
 
   listSets(sessionId: string): Promise<SetLog[]>;
@@ -167,6 +231,23 @@ export interface StoreTx {
   deleteSet(id: string): Promise<void>;
   /** Most recent sets of an exercise from finished sessions, newest first. */
   listFinishedSetsForExercise(exerciseId: string, limit: number): Promise<SetLog[]>;
+
+  getLatestWeeklyCycle(): Promise<WeeklyCycle | null>;
+  getWeeklyCycle(id: string): Promise<WeeklyCycle | null>;
+  insertWeeklyCycle(c: WeeklyCycle): Promise<void>;
+  closeWeeklyCycle(id: string, closedAt: string): Promise<void>;
+  getWeeklyReview(weeklyCycleId: string): Promise<WeeklyReview | null>;
+  /** Inserts unless the cycle already has a review. Never overwrites. */
+  insertWeeklyReview(r: WeeklyReview): Promise<'inserted' | 'conflict'>;
+
+  getProposal(id: string): Promise<ProgressionProposal | null>;
+  listProposals(limit: number): Promise<ProgressionProposal[]>;
+  /** Unique on (weeklyCycleId, exerciseId, evidenceKey); a duplicate is ignored. */
+  insertProposal(p: ProgressionProposal): Promise<'inserted' | 'conflict'>;
+  updateProposal(p: ProgressionProposal): Promise<void>;
+
+  listIncrements(): Promise<EquipmentIncrement[]>;
+  putIncrement(i: EquipmentIncrement): Promise<void>;
 
   /** Inserts unless the logical reward key exists. Never overwrites. */
   insertLedger(entry: LedgerEntry): Promise<'inserted' | 'conflict'>;

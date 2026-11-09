@@ -53,19 +53,25 @@ export function Button({
   variant = 'primary',
   disabled,
   hint,
+  a11yLabel,
+  testID,
 }: {
   label: string;
   onPress: () => void;
   variant?: 'primary' | 'secondary' | 'recovery';
   disabled?: boolean;
   hint?: string;
+  /** Screen-reader name when the visible label (e.g. an arrow) needs context. */
+  a11yLabel?: string;
+  testID?: string;
 }) {
   const bg = variant === 'primary' ? C.accentStrong : variant === 'recovery' ? C.recovery : C.surfaceRaised;
   const fg = variant === 'recovery' ? C.bg : C.onAccent;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={a11yLabel ?? label}
+      testID={testID}
       accessibilityHint={hint}
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}

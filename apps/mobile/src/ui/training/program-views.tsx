@@ -3,7 +3,6 @@ import { Text, View } from 'react-native';
 
 import { alternativesFor, EXERCISES, exerciseById, isAvailable } from '@/domain/training/catalog';
 import {
-  diffPrograms,
   LIMITS,
   ProgramError,
   validateProgram,
@@ -13,8 +12,17 @@ import {
   type ProgramChange,
 } from '@/domain/training/program';
 import type { TrainingProfileFacts, Weekday } from '@/domain/training/profile';
+import type { ScheduleConflict } from '@/domain/training/schedule';
 import { Button, Card, Chip, Field, T } from '@/ui/components';
-import { describeChange, exerciseName, PROGRAM_ERROR_LABELS, prescriptionText, WEEKDAY_LONG, WEEKDAY_SHORT } from '@/ui/labels';
+import {
+  describeChange,
+  describeConflict,
+  exerciseName,
+  PROGRAM_ERROR_LABELS,
+  prescriptionText,
+  WEEKDAY_LONG,
+  WEEKDAY_SHORT,
+} from '@/ui/labels';
 import { C } from '@/ui/theme';
 
 export function ExposureNote({ program }: { program: Program }) {
@@ -43,6 +51,27 @@ export function ProgramSummary({ program }: { program: Program }) {
         </Card>
       ))}
     </View>
+  );
+}
+
+/** Effective-week conflicts: shown explicitly; nothing is moved or deleted to resolve them. */
+export function ConflictList({ conflicts }: { conflicts: ScheduleConflict[] }) {
+  if (conflicts.length === 0) return null;
+  return (
+    <Card accent={C.danger}>
+      <Text style={T.h3}>Takvim çakışması</Text>
+      <View testID="conflict-list" style={{ gap: 4 }}>
+        {conflicts.map((c) => (
+          <Text key={c.date} style={T.body}>
+            • {describeConflict(c)}
+          </Text>
+        ))}
+      </View>
+      <Text style={T.muted}>
+        Bu haftaki taşınmış seanslar korunuyor; uygulama hiçbir seansı kendiliğinden taşımaz veya silmez. Taşınan seansı
+        boş bir güne al ya da bu program gününü başka bir güne koy, sonra yeniden önizle.
+      </Text>
+    </Card>
   );
 }
 
@@ -125,16 +154,19 @@ function Stepper({ label, value, min, max, onChange }: { label: string; value: n
 export function ProgramEditor({
   initial,
   facts,
+  onPreview,
   onAccept,
   onCancel,
 }: {
   initial: Program;
   facts: TrainingProfileFacts;
+  /** Service-side preview: structural diff + conflicts with this week's moves. */
+  onPreview: (program: Program) => Promise<{ changes: ProgramChange[]; conflicts: ScheduleConflict[] } | string>;
   onAccept: (program: Program) => Promise<string | null>;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<Program>(() => structuredClone(initial));
-  const [preview, setPreview] = useState<ProgramChange[] | null>(null);
+  const [preview, setPreview] = useState<{ changes: ProgramChange[]; conflicts: ScheduleConflict[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [swapFor, setSwapFor] = useState<string | null>(null);
   const [addTo, setAddTo] = useState<string | null>(null);
@@ -154,14 +186,24 @@ export function ProgramEditor({
       Object.assign(e, patch);
     });
 
-  const showPreview = () => {
+  const moveEx = (dayId: string, index: number, delta: -1 | 1) =>
+    edit((p) => {
+      const list = p.days.find((d) => d.id === dayId)!.exercises;
+      const j = index + delta;
+      if (j < 0 || j >= list.length) return;
+      [list[index], list[j]] = [list[j], list[index]];
+    });
+
+  const showPreview = async () => {
     try {
       validateProgram(draft, facts);
     } catch (e) {
       setError(e instanceof ProgramError ? PROGRAM_ERROR_LABELS[e.code] : 'Program geçersiz.');
       return;
     }
-    setPreview(diffPrograms(initial, draft));
+    const r = await onPreview(draft);
+    if (typeof r === 'string') setError(r);
+    else setPreview(r);
   };
 
   if (preview) {
@@ -169,16 +211,21 @@ export function ProgramEditor({
       <View style={{ gap: 16 }}>
         <Card accent={C.accent}>
           <Text style={T.h3}>Değişiklik önizlemesi</Text>
-          <ChangeList changes={preview} />
+          <ChangeList changes={preview.changes} />
           <ExposureNote program={draft} />
           <Text style={T.muted}>
             Onaylarsan yeni bir program sürümü kaydedilir; önceki sürüm geçmişte kalır. Bugünün ödülü ve tamamlanan
-            antrenmanlar değişmez.
+            antrenmanlar değişmez. Başlamış bir antrenman kendi hareket sırasıyla devam eder.
           </Text>
         </Card>
-        {error && <Text style={[T.body, { color: C.danger }]}>{error}</Text>}
+        <ConflictList conflicts={preview.conflicts} />
+        {error && (
+          <Text style={[T.body, { color: C.danger }]} testID="editor-error">
+            {error}
+          </Text>
+        )}
         <View style={T.row}>
-          <Button label="Değişiklikleri onayla" disabled={preview.length === 0}
+          <Button label="Değişiklikleri onayla" disabled={preview.changes.length === 0 || preview.conflicts.length > 0}
             onPress={async () => setError(await onAccept(draft))} />
           <Button label="Düzenlemeye dön" variant="secondary" onPress={() => setPreview(null)} />
         </View>
@@ -209,14 +256,24 @@ export function ProgramEditor({
                   }} />
               ))}
             </View>
-            {d.exercises.map((e) => {
+            {d.exercises.map((e, index) => {
               const key = `${d.id}:${e.exerciseId}`;
               const alts = alternativesFor(e.exerciseId, facts.equipment, facts.limitations).filter(
                 (a) => !d.exercises.some((x) => x.exerciseId === a.id),
               );
               return (
                 <View key={e.exerciseId} style={{ gap: 6, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 8 }}>
-                  <Text style={T.body}>{exerciseName(e.exerciseId)}</Text>
+                  <View style={[T.row, { justifyContent: 'space-between' }]}>
+                    <Text style={[T.body, { flex: 1, minWidth: 140 }]}>
+                      {index + 1}. {exerciseName(e.exerciseId)}
+                    </Text>
+                    <Button label="↑" variant="secondary" disabled={index === 0}
+                      hint={`${exerciseName(e.exerciseId)} yukarı taşı`} a11yLabel={`${exerciseName(e.exerciseId)} yukarı`}
+                      onPress={() => moveEx(d.id, index, -1)} />
+                    <Button label="↓" variant="secondary" disabled={index === d.exercises.length - 1}
+                      hint={`${exerciseName(e.exerciseId)} aşağı taşı`} a11yLabel={`${exerciseName(e.exerciseId)} aşağı`}
+                      onPress={() => moveEx(d.id, index, 1)} />
+                  </View>
                   <Stepper label="Set" value={e.sets} min={LIMITS.setsMin} max={LIMITS.setsMax}
                     onChange={(v) => updateEx(d.id, e.exerciseId, { sets: v })} />
                   <Stepper label="Tekrar ≥" value={e.repMin} min={LIMITS.repsMin} max={e.repMax}
