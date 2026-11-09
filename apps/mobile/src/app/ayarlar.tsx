@@ -1,0 +1,93 @@
+import { useState } from 'react';
+
+import type { Profile } from '@/data/types';
+import { Text, View } from 'react-native';
+
+import { MULTIPLIER_HALVES, multiplierLabel, type MultiplierHalves } from '@/domain/game/economy';
+import { HABIT_CATALOG } from '@/domain/game/quests';
+import { useAvci } from '@/ui/avci-context';
+import { Button, Card, Chip, Screen, StorageGate, T } from '@/ui/components';
+import { C } from '@/ui/theme';
+
+export default function SettingsScreen() {
+  return (
+    <StorageGate>
+      <Settings />
+    </StorageGate>
+  );
+}
+
+function Settings() {
+  const { snapshot } = useAvci();
+  const [saved, setSaved] = useState<string | null>(null);
+  const profile = snapshot?.profile;
+  if (!profile) {
+    return (
+      <Screen title="Ayarlar">
+        <Card>
+          <Text style={T.body}>Ayarlar, profilini oluşturduktan sonra açılır.</Text>
+        </Card>
+      </Screen>
+    );
+  }
+  // Re-key on save so the form re-initialises from the stored profile.
+  return <SettingsForm key={profile.confirmedAt} profile={profile} saved={saved} setSaved={setSaved} />;
+}
+
+function SettingsForm({
+  profile,
+  saved,
+  setSaved,
+}: {
+  profile: Profile;
+  saved: string | null;
+  setSaved: (msg: string | null) => void;
+}) {
+  const { snapshot, act } = useAvci();
+  const [mult, setMult] = useState<MultiplierHalves>(profile.multiplierHalves);
+  const [habits, setHabits] = useState<string[]>(profile.habitKeys);
+  const toggle = (key: string) =>
+    setHabits((h) => (h.includes(key) ? h.filter((k) => k !== key) : h.length < 2 ? [...h, key] : [h[1], key]));
+  const dirty = mult !== profile.multiplierHalves || habits.join() !== profile.habitKeys.join();
+
+  return (
+    <Screen title="Ayarlar">
+      <Card>
+        <Text style={T.h3}>XP çarpanı</Text>
+        <View style={T.row} accessibilityRole="radiogroup">
+          {MULTIPLIER_HALVES.map((h) => (
+            <Chip key={h} label={multiplierLabel(h)} selected={h === mult} onPress={() => setMult(h)} />
+          ))}
+        </View>
+        <Text style={T.muted}>
+          Çarpan yalnızca oyundaki XP ödülünü değiştirir; set, tekrar, ağırlık veya kardiyo miktarını asla değiştirmez.
+          Yeni değer bir sonraki görev gününden itibaren geçerlidir; bugünün ve geçmişin ödülleri değişmez.
+        </Text>
+      </Card>
+      <Card>
+        <Text style={T.h3}>Alışkanlık görevleri (iki tane)</Text>
+        <View style={T.row} accessibilityRole="radiogroup">
+          {HABIT_CATALOG.map((h) => (
+            <Chip key={h.key} label={h.title} selected={habits.includes(h.key)} onPress={() => toggle(h.key)} />
+          ))}
+        </View>
+        <Text style={T.muted}>Değişiklik ertesi gün geçerli olur; aynı gün görev değiştirerek ek XP kazanılmaz.</Text>
+      </Card>
+      <Button
+        label="Kaydet"
+        disabled={!dirty || habits.length !== 2}
+        onPress={async () => {
+          await act((s) => s.updateSettings({ multiplierHalves: mult, habitKeys: habits }));
+          setSaved('Kaydedildi. Yarınki görev gününden itibaren uygulanacak.');
+        }}
+      />
+      {saved && <Text style={[T.body, { color: C.success }]}>{saved}</Text>}
+      <Card>
+        <Text style={T.h3}>Veri</Text>
+        <Text style={T.muted}>Depolama: {snapshot?.storageKind}</Text>
+        <Text style={T.muted}>Gün sınırı için saat dilimi: {snapshot?.today?.timezone ?? profile.timezone}</Text>
+        <Text style={T.muted}>Dışa aktarma, geri yükleme ve silme M3 aşamasında eklenecek.</Text>
+      </Card>
+    </Screen>
+  );
+}
