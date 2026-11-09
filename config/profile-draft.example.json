@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "status": "unconfirmed-draft-not-current-measurements",
+  "locale": "tr-TR",
+  "timezone": "Europe/Istanbul",
+  "xpMultiplier": 1,
+  "current": {
+    "heightCm": null,
+    "weightKg": null,
+    "trainingDays": null
+  },
+  "previousConversationSuggestions": {
+    "heightCm": null,
+    "weightKg": null,
+    "experienceYears": null,
+    "daysPerWeek": 5,
+    "split": "PPLPP",
+    "sundayRest": true,
+    "priorities": [
+      "upper_chest",
+      "lateral_delts",
+      "back_width"
+    ]
+  },
+  "confirmationRequired": true,
+  "photoRequired": false,
+  "cloudSyncEnabled": false,
+  "aiEnabled": false,
+  "healthKitEnabled": false
+}
