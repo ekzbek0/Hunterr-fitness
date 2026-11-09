@@ -306,6 +306,82 @@ describe.each(backends)('M1 fixes + M2 ($name)', (backend) => {
     ok(await service.logSet(s.id, { exerciseId: band.exerciseId, kind: 'work', reps: 12, load: 0, unit: 'kg', rir: 2 }));
   });
 
+  // ---------- review findings (regressions) ----------
+  it('a target load never travels to a swapped/added exercise; only a proposal creates one', async () => {
+    await twoGoodSessions();
+    const p = (await benchProposal())!;
+    ok(await service.acceptProposal(p.id, { techniqueConfirmed: true }));
+    const plan = (await service.loadTraining()).plan!;
+    // Swap bench -> dumbbell bench keeping the 62.5 kg target: refused (per-dumbbell would mean 125 kg).
+    const swapped = structuredClone(plan.program);
+    const ex = swapped.days[0].exercises.find((e) => e.exerciseId === BENCH)!;
+    ex.exerciseId = 'db-bench-press';
+    const r = await service.acceptProgram({ baseVersionId: plan.id, program: swapped, source: 'user-edit' });
+    expect(r.status === 'rejected' && r.detail).toBe('target-load');
+    // Inventing a target by hand is refused too; clearing one is allowed and shown in the diff.
+    const invented = structuredClone(plan.program);
+    invented.days[1].exercises[0].targetLoad = { value: 50, unit: 'kg' };
+    expect((await service.acceptProgram({ baseVersionId: plan.id, program: invented, source: 'user-edit' })).status).toBe('rejected');
+    ex.targetLoad = null;
+    const ok2 = ok(await service.acceptProgram({ baseVersionId: plan.id, program: swapped, source: 'user-edit' }));
+    expect(ok2.plan.program.days[0].exercises.find((e) => e.exerciseId === 'db-bench-press')!.targetLoad).toBeNull();
+  });
+
+  it('a declined proposal does not come back next week or after an unrelated plan edit', async () => {
+    await twoGoodSessions();
+    const p = (await benchProposal())!;
+    ok(await service.declineProposal(p.id));
+    const plan = (await service.loadTraining()).plan!;
+    const edited = structuredClone(plan.program);
+    const legs = edited.days.find((d) => d.id === 'legs-1')!;
+    legs.exercises.reverse();
+    ok(await service.acceptProgram({ baseVersionId: plan.id, program: edited, source: 'user-edit' }));
+    expect(ok(await service.loadWeeklyReview()).proposals.filter((x) => x.status === 'pending')).toEqual([]);
+    clock.set(morning('2026-11-16'));
+    await checkin();
+    const next = ok(await service.loadWeeklyReview());
+    expect(next.proposals).toEqual([]);
+  });
+
+  it('opening the review before today\'s check-in keeps a pending proposal pending (no stale duplicate)', async () => {
+    await twoGoodSessions();
+    const p = (await benchProposal())!;
+    clock.set(morning('2026-11-15')); // Sunday, new task day, no check-in yet
+    const blocked = ok(await service.loadWeeklyReview());
+    expect(blocked.readinessBlocked).toBe(true);
+    expect(blocked.proposals.map((x) => [x.id, x.status])).toEqual([[p.id, 'pending']]);
+    const r = await service.acceptProposal(p.id, { techniqueConfirmed: true });
+    expect(r.status === 'rejected' && r.reason).toBe('readiness-blocked');
+    await checkin();
+    const after = ok(await service.loadWeeklyReview());
+    expect(after.proposals.map((x) => [x.id, x.status])).toEqual([[p.id, 'pending']]);
+    ok(await service.acceptProposal(p.id, { techniqueConfirmed: true }));
+  });
+
+  it('a regenerated split that would drop a moved session is refused, and band sets cannot be edited to kg', async () => {
+    await setup();
+    clock.set(morning('2026-11-10'));
+    const t = await service.loadTraining();
+    ok(await service.moveSession(t.week.find((w) => w.programDayId === 'pull-1')!.slotId, '2026-11-12'));
+    ok(await service.confirmTrainingProfile({ ...DRAFT_TRAINING_PROFILE, trainingDays: [0, 2, 4, 6] }));
+    const p = ok(await service.proposeGeneratedProgram());
+    expect(p.conflicts.some((c) => c.kind === 'would-displace' && c.sessions[0].programDayId === 'pull-1')).toBe(true);
+    const r = await service.acceptProgram({ baseVersionId: t.plan!.id, program: p.program, source: 'generated' });
+    expect(r.status === 'rejected' && r.reason).toBe('schedule-conflict');
+    expect((await service.loadTraining()).week.find((w) => w.programDayId === 'pull-1')).toMatchObject({ date: '2026-11-12', moved: true });
+  });
+
+  it('a timezone change mid-week keeps the same weekly cycle and reward', async () => {
+    await service.createProfile({});
+    const c1 = ok(await service.loadWeeklyReview()).cycle;
+    clock.tz = 'America/New_York';
+    clock.set('2026-11-12T15:00:00Z');
+    expect(ok(await service.loadWeeklyReview()).cycle.id).toBe(c1.id);
+    expect((await service.completeWeeklyReview(c1.id)).status).toBe('awarded');
+    clock.tz = 'Asia/Tokyo';
+    expect((await service.completeWeeklyReview(c1.id)).status).toBe('already-completed');
+  });
+
   // ---------- M2 rest timer ----------
   it('rest timer survives restart; remaining time comes from the stored timestamp', async () => {
     await setup();

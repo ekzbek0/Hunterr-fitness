@@ -61,5 +61,43 @@
   işlemde sürüm artışıyla; hata olursa v1 aynen kalır (test edildi). IndexedDB belge v1→v2
   bellekte dönüştürülür ve ilk yazımda kalıcılaşır; gelecek sürüm depoya dokunmadan reddedilir.
 
+- 2026-11-09: Hareket sırası programın parçasıdır: yalnız sıra değişikliği `exercise-order`
+  farkıdır ve yeni sürüm yazar. Başlamış seans kendi reçete/sıra anlık görüntüsünü korur.
+- 2026-11-09: Program düzenlemesi etkin haftaya göre doğrulanır (program + bu haftanın
+  `schedule_move` kayıtları, bugün ve sonrası). Çakışma reddedilir ve gösterilir; seans
+  kendiliğinden taşınmaz/silinmez, mevcut taşıma kaydı korunur. Geçmiş günler denetlenmez
+  (başlatılamazlar). Ayrıca bugün/sonrasındaki tamamlanmış, devam eden veya taşınmış bir seans
+  yeni planda kaybolacak ya da günü değişecekse değişiklik reddedilir (`would-displace`);
+  tamamlanmış seans günü dolu tutar. Bu yüzden bölünme değişikliği o gün değil ertesi gün
+  kabul edilebilir. Doğrulama: tests/m2-service.test.ts, tests/training-service.test.ts, e2e/web-m2.mjs.
+- 2026-11-09: Hedef yük (`targetLoad`) yalnız kabul edilen ilerleme önerisiyle oluşur; elle
+  düzenleme aynı hareketin mevcut hedefini koruyabilir veya kaldırabilir, oluşturamaz/taşıyamaz.
+  Ret/kabul edilen kanıt hiçbir haftada yeniden önerilmez; yalnız bugünkü kontrol engelliyorsa
+  öneri bekler (bayatlamaz), kabul kapalıdır.
+- 2026-11-09: Haftalık döngü görev gününden türetilir (Pazartesi başlangıçlı yerel hafta),
+  ilk açılışta kalıcı UUID + sınırlar + saat dilimi + görev gününün çarpanı yakalanır;
+  sonraki haftanın ilk görev günü bir kez kapatır; kapalı döngü asla yeniden açılmaz.
+  Değerlendirme yalnız güncel döngü için yapılır (ödül döngü başına bir kez, defter
+  anahtarı week/döngü/weekly-review). Gerekçe: DATA_MODEL "never reopen a closed cycle".
+- 2026-11-09: İlerleme eşikleri (14 gün güncellik ve ara, RIR≥2, üst tekrar sınırı iki seans,
+  en fazla %5) yapılandırılabilir ürün varsayımlarıdır; tıbbi algoritma olarak sunulmaz.
+  "Son iki karşılaştırılabilir seans" = hareketin çalışma seti olan son iki bitmiş seansı;
+  bunlar birbirine ve güncel reçeteye uymuyorsa daha eski seanslara geri gidilmez (artış yok).
+  Seans gününde kontrol kaydı yoksa artış yok. Teknik eşdeğerliği kabul anında kullanıcı onaylar.
+- 2026-11-09: Yük artışı yalnız kullanıcının doğruladığı ekipman+birim adımıyla
+  (`equipment_increment`: halter, dambıl (tek dambıl adımı), makine, kablo, ek ağırlık);
+  kg↔lb dönüşümü yapılmaz. Lastik ayrı yük türü (`band`): kg olarak kaydedilmez, ilerletilmez.
+- 2026-11-09: Öneri bir denetim kaydıdır (`progression_proposal`: plan sürümü, kanıt anahtarı,
+  önce/sonra, artış, durum pending/accepted/declined/stale). Kabulde aynı işlemde yeniden
+  hesaplanır; sonuç farklıysa `stale`. Kabul `targetLoad` içeren yeni `plan_version`
+  (`proposal_id`) yazar; `source` CHECK kısıtını değiştirmemek için `user-edit` kalır
+  (kullanıcı onaylı değişiklik), köken `proposal_id` ile izlenir. Reddedilen kanıt yeniden önerilmez.
+- 2026-11-09: Dinlenme sayacı: yalnız başlangıç zaman damgası + süre saklanır; kalan süre
+  saatten hesaplanır (arka plan/yeniden açılış güvenli; saat geri alınırsa süre uzamaz).
+- 2026-11-09: Avatar/rozetler saf `cosmetics.ts` ile seviyeden türetilir; ek bağımlılık yok
+  (React Native View'larla çizilir), animasyon yok, antrenman alanını içe aktarmaz.
+- 2026-11-09: Migration 3 / belge v3 yalnız ekleyicidir; M0/M1 satırları aynen kalır, hata
+  olursa v2 korunur (tests/m2-migration.test.ts).
+
 Record implementation choices here with reason and validation, including
 task-day travel policy, persistence adapter, versions, and sync conflict policy.

@@ -37,6 +37,7 @@ import { cycleWeekEnd, decideWeeklyCycle, WEEKLY_REVIEW_SLOT } from '@/domain/ga
 import { exerciseById, INCREMENT_KEYS, type IncrementKey } from '@/domain/training/catalog';
 import {
   evaluateProgression,
+  isReadinessHold,
   validateIncrement,
   type ProgressionDecision,
   type SessionEvidence,
@@ -72,8 +73,23 @@ export interface Clock {
 }
 
 const XP_WEEKLY = XP.weeklyReview;
+
+function targetsCarriedOver(current: Program | null, next: Program): boolean {
+  const existing = (current?.days ?? []).flatMap((d) => d.exercises).filter((e) => e.targetLoad);
+  return next.days.every((d) =>
+    d.exercises.every(
+      (e) =>
+        !e.targetLoad ||
+        existing.some(
+          (x) => x.exerciseId === e.exerciseId && x.targetLoad!.value === e.targetLoad!.value && x.targetLoad!.unit === e.targetLoad!.unit,
+        ),
+    ),
+  );
+}
 /** Stored proposal key = `${evidence}@${planVersionId}` plus an optional `#n` re-proposal suffix. */
 const baseKey = (k: string) => k.split('#')[0];
+/** Evidence part only (no plan version): used to keep declined evidence from returning. */
+const evidenceOf = (k: string) => k.split('@')[0];
 
 export const systemClock: Clock = {
   now: () => new Date(),
@@ -132,6 +148,8 @@ export type TrainingRejectReason =
   /** The proposal's data or plan version changed; it was re-validated and withdrawn. */
   | 'proposal-stale'
   | 'technique-unconfirmed'
+  /** Today's check-in is missing or blocks load increases; the proposal stays pending. */
+  | 'readiness-blocked'
   | MoveError;
 
 export type TrainingResult<T> =
@@ -152,6 +170,8 @@ export interface WeeklyReviewSnapshot {
   rewardXp: number;
   rewardsFrozen: boolean;
   checkinToday: boolean;
+  /** Today's readiness (missing/blocking check-in) prevents accepting any increase. */
+  readinessBlocked: boolean;
   /** Non-actionable outcomes with reasons (hold / rebaseline), one per exercise. */
   decisions: ProgressionDecision[];
   /** Proposals of this cycle (pending, accepted, declined, stale), newest first. */
@@ -378,7 +398,13 @@ export class AvciService {
 
   /** Deterministic proposal from the confirmed facts, with a diff against the current plan. */
   async proposeGeneratedProgram(): Promise<
-    TrainingResult<{ program: Program; changes: ProgramChange[]; baseVersionId: string | null; skippedPatterns: string[] }>
+    TrainingResult<{
+      program: Program;
+      changes: ProgramChange[];
+      baseVersionId: string | null;
+      skippedPatterns: string[];
+      conflicts: ScheduleConflict[];
+    }>
   > {
     return this.repo.transaction(async (tx) => {
       const tp = await tx.getTrainingProfile();
@@ -392,6 +418,7 @@ export class AvciService {
           changes: current ? diffPrograms(current.program, program) : [],
           baseVersionId: current?.id ?? null,
           skippedPatterns,
+          conflicts: await this.conflictsFor(tx, program),
         },
       };
     });
@@ -418,6 +445,12 @@ export class AvciService {
       }
       const current = await tx.getLatestPlan();
       if ((current?.id ?? null) !== input.baseVersionId) return { status: 'rejected', reason: 'plan-changed' };
+      // Load targets are written only by an accepted progression proposal. A manual
+      // edit or regeneration may keep an existing target of the same exercise or
+      // clear it, never create or move one (e.g. onto a swapped exercise).
+      if (!targetsCarriedOver(current?.program ?? null, program)) {
+        return { status: 'rejected', reason: 'invalid', detail: 'target-load' };
+      }
       const changes = current ? diffPrograms(current.program, program) : [];
       if (current && changes.length === 0) return { status: 'ok', value: { plan: current, changes } };
       // Validate the effective week (program + existing moves) in the same transaction.
@@ -577,6 +610,9 @@ export class AvciService {
       } catch (e) {
         return { status: 'rejected', reason: 'invalid', detail: e instanceof Error ? e.message : undefined };
       }
+      if (exerciseById(set.exerciseId)?.loadConvention === 'band' && set.load !== 0) {
+        return { status: 'rejected', reason: 'invalid', detail: 'band-load' };
+      }
       const next: SetLog = { ...current, kind: set.kind, reps: set.reps, load: set.load, unit: set.unit, rir: set.rir,
         updatedAt: this.clock.now().toISOString() };
       await tx.updateSet(next);
@@ -687,7 +723,11 @@ export class AvciService {
       const existing = await tx.listProposals(500);
       for (const p of existing) {
         if (p.status !== 'pending') continue;
-        if (p.weeklyCycleId !== cycle.id || increases.get(p.exerciseId) !== baseKey(p.evidenceKey)) {
+        const d = decisions.find((x) => x.exerciseId === p.exerciseId);
+        // Only today's readiness blocks: the evidence is unchanged, keep it pending (acceptance
+        // re-validates anyway). A new week, other evidence or another plan version withdraws it.
+        const readinessOnly = d !== undefined && isReadinessHold(d);
+        if (p.weeklyCycleId !== cycle.id || (!readinessOnly && increases.get(p.exerciseId) !== baseKey(p.evidenceKey))) {
           await tx.updateProposal({ ...p, status: 'stale', decidedAt: now });
           p.status = 'stale';
         }
@@ -695,10 +735,12 @@ export class AvciService {
       for (const d of decisions) {
         if (d.kind !== 'increase') continue;
         const key = `${d.evidenceKey}@${plan!.id}`;
+        // A declined or accepted decision on this evidence is final in every week and plan
+        // version: the same sessions are never proposed again. A pending one is not duplicated.
+        if (existing.some((p) => p.exerciseId === d.exerciseId && evidenceOf(p.evidenceKey) === d.evidenceKey &&
+          (p.status === 'declined' || p.status === 'accepted'))) continue;
         const same = existing.filter((p) => p.weeklyCycleId === cycle.id && p.exerciseId === d.exerciseId && baseKey(p.evidenceKey) === key);
-        // A pending, accepted or declined proposal for this evidence is final: never re-proposed.
-        // Evidence that became valid again after being withdrawn as stale gets a new record.
-        if (same.some((p) => p.status !== 'stale')) continue;
+        if (same.some((p) => p.status === 'pending')) continue;
         await tx.insertProposal({
           id: newId(),
           weeklyCycleId: cycle.id,
@@ -725,6 +767,7 @@ export class AvciService {
           rewardXp: awardedXp(XP_WEEKLY, cycle.multiplierHalves),
           rewardsFrozen: clockAnomaly,
           checkinToday: (await tx.getCheckin(day.id)) !== null,
+          readinessBlocked: decisions.some(isReadinessHold),
           decisions: decisions.filter((d) => d.kind !== 'increase'),
           proposals: (await tx.listProposals(500)).filter((p) => p.weeklyCycleId === cycle.id),
           increments: await tx.listIncrements(),
@@ -795,6 +838,8 @@ export class AvciService {
       };
       if (!tp || !plan || plan.id !== proposal.planVersionId || proposal.weeklyCycleId !== cycle.id) return stale();
       const fresh = (await this.evaluateAll(tx, plan, day, proposal.exerciseId))[0];
+      // Today's readiness blocks acceptance but does not invalidate the evidence.
+      if (fresh && isReadinessHold(fresh)) return { status: 'rejected', reason: 'readiness-blocked' };
       if (!fresh || fresh.kind !== 'increase' || `${fresh.evidenceKey}@${plan.id}` !== baseKey(proposal.evidenceKey)) return stale();
       const b = proposal.before;
       const program: Program = structuredClone(plan.program);
@@ -997,8 +1042,12 @@ export class AvciService {
     if (!profile) return [];
     const { day } = await this.ensureDay(tx, profile);
     const weekStart = weekStartOf(day.localDate);
-    const week = buildWeek(program, weekStart, await tx.listMoves(weekStart), await tx.listSessionsForWeek(weekStart), day.localDate);
-    return findScheduleConflicts(week, day.localDate);
+    const moves = await tx.listMoves(weekStart);
+    const sessions = await tx.listSessionsForWeek(weekStart);
+    const next = buildWeek(program, weekStart, moves, sessions, day.localDate);
+    const plan = await tx.getLatestPlan();
+    const current = plan ? buildWeek(plan.program, weekStart, moves, sessions, day.localDate) : [];
+    return findScheduleConflicts(next, day.localDate, current);
   }
 
   /** Deterministic progression decision per exercise of the current plan (or one exercise). */

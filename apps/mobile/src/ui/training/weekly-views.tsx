@@ -28,11 +28,14 @@ const STATUS_LABELS: Record<ProgressionProposal['status'], string> = {
 function ProposalCard({
   p,
   busy,
+  blocked,
   onAccept,
   onDecline,
 }: {
   p: ProgressionProposal;
   busy: boolean;
+  /** Today's check-in missing or blocking: accept is unavailable, the proposal stays pending. */
+  blocked: boolean;
   onAccept: (id: string, techniqueConfirmed: boolean) => void;
   onDecline: (id: string) => void;
 }) {
@@ -66,8 +69,13 @@ function ProposalCard({
               selected={confirmed}
               onPress={() => setConfirmed(!confirmed)}
             />
+            {blocked && (
+              <Text style={[T.body, { color: C.warning }]}>
+                Bugünkü kontrol eksik veya yük artışını engelliyor; kabul şimdilik kapalı. Öneri bekliyor.
+              </Text>
+            )}
             <View style={T.row}>
-              <Button label={`Öneriyi kabul et: ${name}`} disabled={busy || !confirmed} onPress={() => onAccept(p.id, confirmed)} />
+              <Button label={`Öneriyi kabul et: ${name}`} disabled={busy || !confirmed || blocked} onPress={() => onAccept(p.id, confirmed)} />
               <Button label={`Reddet: ${name}`} variant="secondary" disabled={busy} onPress={() => onDecline(p.id)} />
             </View>
           </>
@@ -180,7 +188,7 @@ export function WeeklyReviewView({
       <Text style={T.h3}>Yük önerileri</Text>
       {review.proposals.length === 0 && <Text style={T.muted}>Bu hafta için yük artışı önerisi yok.</Text>}
       {review.proposals.map((p) => (
-        <ProposalCard key={p.id} p={p} busy={busy} onAccept={onAccept} onDecline={onDecline} />
+        <ProposalCard key={p.id} p={p} busy={busy} blocked={review.readinessBlocked} onAccept={onAccept} onDecline={onDecline} />
       ))}
 
       {holds.length > 0 && (

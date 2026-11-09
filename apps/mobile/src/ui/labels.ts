@@ -125,7 +125,9 @@ export const TRAINING_REJECT_LABELS: Record<TrainingRejectReason, string> = {
   'outside-week': 'Yalnızca bu haftanın günlerine taşınabilir.',
   'in-past': 'Geçmiş bir güne taşınamaz.',
   occupied: 'O günde başka bir antrenman var.',
-  'week-changed': 'Hafta değişti; bu haftanın değerlendirmesi yüklendi.',
+  'week-changed': 'Hafta değişti; değerlendirmeyi yeniden aç.',
+  'readiness-blocked':
+    'Bugünkü kontrol eksik veya yük artışını engelliyor (ağrı, hastalık, uyku, yorgunluk). Öneri bekliyor; plan değişmedi.',
   'schedule-conflict': 'Bu değişiklik bu haftada aynı güne iki antrenman koyuyor. Hiçbir şey kaydedilmedi.',
   'unknown-proposal': 'Öneri bulunamadı.',
   'proposal-decided': 'Bu öneri için zaten karar verildi.',
@@ -164,6 +166,11 @@ export function describeChange(c: ProgramChange): string {
 }
 
 export function describeConflict(c: ScheduleConflict): string {
+  if (c.kind === 'would-displace') {
+    const s = c.sessions[0];
+    const what = s.state === 'done' ? 'tamamlanmış' : s.state === 'in-progress' ? 'devam eden' : 'taşınmış';
+    return `${formatDate(c.date)}: ${what} “${s.title}” seansı bu değişiklikle takvimden düşer veya günü değişir.`;
+  }
   const names = c.sessions.map((x) => (x.moved ? `${x.title} (${formatDate(x.plannedDate)} gününden taşınmış)` : x.title));
   return `${formatDate(c.date)}: ${names.join(' ve ')} aynı güne düşüyor.`;
 }
@@ -219,6 +226,7 @@ export const INCREMENT_KEY_LABELS: Record<IncrementKey, string> = {
 };
 
 export function loadText(load: number, unit: string, convention: LoadConvention): string {
+  if (convention === 'band') return 'lastik direnci (kg/lb değil)';
   if (convention === 'per-dumbbell') return `dambıl başına ${fmtLoad(load)} ${unit} (toplam ${fmtLoad(load * 2)} ${unit})`;
   if (convention === 'bodyweight') return `ek ${fmtLoad(load)} ${unit}`;
   return `${fmtLoad(load)} ${unit} (toplam)`;

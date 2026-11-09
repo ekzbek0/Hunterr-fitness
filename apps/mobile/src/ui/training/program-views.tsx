@@ -94,6 +94,7 @@ export function ProposalPreview({
   changes,
   hasCurrent,
   skippedPatterns,
+  conflicts,
   onAccept,
   onCancel,
 }: {
@@ -101,6 +102,7 @@ export function ProposalPreview({
   changes: ProgramChange[];
   hasCurrent: boolean;
   skippedPatterns: string[];
+  conflicts: ScheduleConflict[];
   onAccept: () => void;
   onCancel?: () => void;
 }) {
@@ -125,9 +127,10 @@ export function ProposalPreview({
           </>
         )}
       </Card>
+      <ConflictList conflicts={conflicts} />
       <ProgramSummary program={program} />
       <View style={T.row}>
-        <Button label="Programı kabul et" onPress={onAccept} />
+        <Button label="Programı kabul et" disabled={conflicts.length > 0} onPress={onAccept} />
         {onCancel && <Button label="Vazgeç" variant="secondary" onPress={onCancel} />}
       </View>
     </View>
@@ -294,7 +297,8 @@ export function ProgramEditor({
                       {alts.map((a) => (
                         <Chip key={a.id} label={a.name} selected={false}
                           onPress={() => {
-                            updateEx(d.id, e.exerciseId, { exerciseId: a.id });
+                            // A target belongs to its exercise: a swap starts without one.
+                            updateEx(d.id, e.exerciseId, { exerciseId: a.id, targetLoad: null });
                             setSwapFor(null);
                           }} />
                       ))}
@@ -314,7 +318,7 @@ export function ProgramEditor({
                       const ex = exerciseById(a.id)!;
                       const iso = ['triceps', 'biceps', 'lateral-raise', 'calves', 'core'].includes(ex.pattern);
                       edit((p) => void p.days.find((x) => x.id === d.id)!.exercises.push({
-                        exerciseId: a.id, sets: 2, repMin: iso ? 10 : 8, repMax: iso ? 15 : 12, targetRir: 2,
+                        exerciseId: a.id, sets: 2, repMin: iso ? 10 : 8, repMax: iso ? 15 : 12, targetRir: 2, targetLoad: null,
                       }));
                       setAddTo(null);
                     }} />

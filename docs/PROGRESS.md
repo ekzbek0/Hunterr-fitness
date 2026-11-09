@@ -1,9 +1,137 @@
 # Current progress
 
 ## Status
-M0 ve M1 (antrenman profili, düzenlenebilir haftalık program, gün taşıma, set
-kaydı, yarıda kalan antrenmana devam, ana görev bağlantısı) web üzerinde çalışıyor
-ve test edildi. Native (iPhone) davranışı henüz gerçek cihazda SINANMADI.
+M0, M1 ve M2 (iki M1 düzeltmesi, haftalık değerlendirme, deterministik yük önerileri,
+dinlenme sayacı, seviyeye göre avatar/rozet) web üzerinde çalışıyor ve test edildi.
+Native (iPhone) davranışı henüz gerçek cihazda SINANMADI.
+
+## 2026-11-09 / M1 düzeltmeleri + M2 / haftalık değerlendirme ve ilerleme
+
+Dal: `claude/project-thread-odi8ww` (`claude/project-thread-aoxh7c` üzerine). main'e birleştirilmedi.
+
+### Oturum ve ajanlar
+- Oturum yine main'den başladı; `.claude/agents` altındaki 7 avci-* tanımı repoda var ama
+  Agent listesinde avci-* türü YOKTU (yüklenmedi). Rolleri, tanım dosyalarını okutarak genel
+  amaçlı alt ajanlarla uyguladım; her yolun tek yazarı vardı:
+  - avci-game rolü (yazar): yalnız `src/domain/game/cosmetics.ts`, `src/ui/avatar.tsx`,
+    `src/app/karakter.tsx`, `tests/cosmetics.test.ts`.
+  - avci-qa + avci-training rolü: salt okuma bağımsız inceleme (aşağıda).
+  - Geri kalan tüm yollar ana oturum (tek yazar).
+
+### M1 düzeltmeleri
+1. **Hareket sırası**: `diffPrograms` artık yalnız sıra değişikliğini `exercise-order`
+   (önce/sonra sıra) olarak döndürür; ekleme/çıkarma tek başına sıra değişikliği sayılmaz.
+   Düzenleyicide ↑/↓ düğmeleri; önizlemede "hareket sırası A → B ⇒ B → A"; onay yeni
+   `plan_version` yazar; yeniden açılışta korunur. Devam eden/geçmiş antrenman başlarken
+   kopyalanan reçete anlık görüntüsünü kullanır, sırası değişmez (testli).
+2. **Takvim çakışması**: `acceptProgram` aynı işlem içinde yeni programı bu haftanın
+   `schedule_move` kayıtları ve seanslarıyla birleştirip etkin haftayı kurar
+   (`findScheduleConflicts`, bugün ve sonrası). Bir günde >1 seans varsa
+   `schedule-conflict` + çakışma listesiyle reddeder; hiçbir şey yazılmaz, hiçbir seans
+   taşınmaz/silinmez. Yeni `previewProgram` aynı denetimi önizlemede yapar; UI "Takvim
+   çakışması" kartını gösterir ve onay düğmesini kapatır. Yeniden üretilen program da aynı
+   denetimden geçer.
+
+### M2 davranışı
+- **Haftalık döngü** (`weekly_cycle`): görev gününün Pazartesi başlangıçlı haftası; ilk
+  açılışta UUID, sıra, sınırlar, saat dilimi ve görev gününün çarpanı yakalanır. Sonraki
+  haftanın ilk görev günü önceki döngüyü bir kez kapatır; daha eski haftaya ait bir gün
+  (saat/saat dilimi geri) kapanmış döngüyü yeniden açmaz.
+- **Haftalık değerlendirme**: Antrenman → "Haftalık değerlendirmeyi aç": hafta özeti
+  (planlı/tamamlanan/kaçırılan, çalışma seti, kontrol, toparlanma günü), öneriler, artış
+  ayarları. "Tamamla" `weekly_review` + `xp_ledger(scope=week, scopeId=döngü, slot=weekly-review)`
+  kaydını tek işlemde yazar: taban 40 × döngünün sabit çarpanı, döngü başına bir kez
+  (tekrar deneme, başka gün, yeniden açılış, eşzamanlı çağrı, sonraki haftadan tekrar = mevcut ödül).
+  Saat anomalisinde ödül dondurulur. Günlük 100 XP sınırının dışında.
+- **İlerleme önerileri** (`src/domain/training/progression.ts`, saf ve deterministik):
+  bugünkü kontrol yok/ağrı/hastalık/"bilmiyorum"/uyku<6/yorgunluk≥4/hassasiyet 3 → artış yok;
+  son iki seans: son seans >14 gün önce veya aradaki boşluk >14 gün → "yeniden başla" (plan
+  değişmez); iki seansın da reçetesi güncel planla aynı, planlanan tüm çalışma setleri,
+  her sette üst tekrar sınırı ve RIR≥2 (boş RIR = kanıt yok), seans günlerinde kontrol var
+  ve ağrı/hastalık yok, aynı birim (kg/lb dönüşümü yok), aynı yük kaydı türü (toplam /
+  dambıl başına / ek yük), tüm setlerde aynı yük. Ek yüksüz vücut ağırlığı ve lastik
+  (`band`, artık ayrı yük türü; lastik setinde yük reddedilir) için artış hesaplanmaz.
+  Artış yalnız kullanıcının ekipman+birim için doğruladığı en küçük adım; adım yükün
+  %5'inden büyükse yük korunur. Her öneride gerekçe + önce/sonra (dambılda "dambıl başına
+  X (toplam 2X)"); kabul için "teknik ve hareket açıklığı aynıydı" onayı gerekir.
+  Kabul: öneri aynı işlemde güncel plan sürümü ve verilerle yeniden hesaplanır; kanıt
+  anahtarı veya plan sürümü farklıysa `stale` olur ve uygulanmaz. Geçerliyse ilgili
+  reçetelere `targetLoad` yazan yeni `plan_version` (`proposal_id` ile) oluşur. Ret kaydedilir,
+  plan değişmez, aynı kanıt yeniden önerilmez. Engelli hareketler gerekçeleriyle listelenir.
+  UI: "Bu eşikler doğrulanmış bir tıbbi algoritma değildir" notu.
+- **Dinlenme sayacı**: seansa yalnız başlangıç zaman damgası + süre (60/90/120/180 sn)
+  yazılır; kalan süre her saniye ve ön plana dönüşte saatten hesaplanır. Tarayıcı tamamen
+  kapatılıp açılınca kaldığı yerden devam eder; saat geri alınırsa süre uzamaz. Bitince
+  "Dinlenme bitti" (bildirim yok).
+- **Karakter**: seviyeye göre gelişen özgün amblem (halka, arma parçası, taç; 9 kademe) ve
+  8 rozet (2/5/10/20/35/50/75/100). Yalnız kozmetik; `cosmetics.ts` yalnız `economy`'yi
+  içe aktarır (testle denetleniyor), antrenman yükünü etkilemez.
+- **Kalıcılık**: SQLite migration 3 (yalnız ekleyici: `plan_version.proposal_id`,
+  `workout_session.rest_*`, `weekly_cycle`, `weekly_review`, `progression_proposal`
+  (UNIQUE döngü+hareket+kanıt), `equipment_increment`). IndexedDB belge v2→v3.
+
+### Bağımsız inceleme (avci-qa + avci-training rolleri, salt okuma) ve düzeltmeler
+XP çoğaltma veya migration veri kaybı bulunmadı (eşzamanlı değerlendirme ×2 → tek ödül, iki depoda).
+Bulunan 6 sorun düzeltildi ve regresyon testleri eklendi:
+1. (Yüksek) Düzenleyicide hareket değiştirince kabul edilmiş hedef yük yeni harekete
+   geçiyordu (ör. 62,5 kg toplam → dambıl başına). Artık takas/eklemede hedef sıfırlanır ve
+   servis, yalnız öneri kabulünün hedef yazmasına izin verir (aynı hareketin mevcut hedefi
+   korunabilir veya kaldırılabilir; yeni/taşınmış hedef `target-load` ile reddedilir).
+2. (Orta) Farklı bölünmeli yeni program bu haftanın tamamlanmış/devam eden/taşınmış seansını
+   sessizce takvimden düşürebiliyordu. Çakışma denetimi artık mevcut planın haftasını da
+   karşılaştırır: bugün ve sonrasındaki böyle bir seans kaybolacak veya günü değişecekse
+   `would-displace` çakışması; tamamlanmış seans bulunduğu günü dolu tutar. Program önerisi
+   ekranı da çakışmayı kabulden önce gösterir. (Bu, iki M1 testinin eski "sessizce kabul"
+   beklentisini değiştirdi: aynı gün reddedilir, ertesi gün kabul edilir.)
+3. (Orta) Reddedilen öneri sonraki hafta veya ilgisiz bir program düzenlemesinden sonra geri
+   geliyordu. Ret/kabul artık kanıt anahtarına (plan sürümünden bağımsız) göre kalıcıdır.
+4. (Orta) Kontrolden önce değerlendirmeyi açmak bekleyen öneriyi "geçersiz" yapıp kopyasını
+   üretiyordu. Yalnız bugünkü hazır olma durumu engelliyorsa öneri bekler, kabul düğmesi
+   kapalıdır ve servis `readiness-blocked` döndürür (öneri bayatlamaz).
+5. (Düşük) Lastik hareketi bekleme satırında "0 kg" görünebiliyordu; `updateSet` lastik setine
+   yük yazılmasına izin veriyordu. İkisi de düzeltildi.
+6. (Düşük) "Hafta değişti" metni gerçekte olmayan bir yeniden yüklemeyi vaat ediyordu; düzeltildi.
+Ek test: hafta içinde saat dilimi değişince aynı döngü ve tek ödül.
+
+### Değişen yollar
+`apps/mobile/src/{domain/training/{program,catalog,schedule,progression,rest}.ts,
+domain/game/{weekly-cycle,cosmetics}.ts,data/**,services/avci-service.ts,app/{antrenman,karakter}.tsx,
+ui/{components,labels,avatar}.tsx|ts,ui/training/*}`, `apps/mobile/tests/{m2-domain,m2-service,
+m2-migration,cosmetics,migration}.test.ts`, `apps/mobile/e2e/web-m2.mjs`, `apps/mobile/package.json`,
+`docs/PROGRESS.md`, `docs/DECISIONS.md`.
+
+### Çalıştırılan komutlar ve gerçek sonuçlar (apps/mobile)
+- `npx tsc --noEmit` → hata yok. `npx expo lint` → hata/uyarı yok.
+- `npx vitest run` → 11 dosya, 260 test geçti (M1: 167 → 260; inceleme düzeltmeleri dahil). M1 düzeltmeleri ve M2 servis
+  senaryoları iki gerçek depoda (node:sqlite ve fake-indexeddb): sıra değişikliği
+  önizleme/kabul/yeniden açılış + devam eden seansın sırası; Salı→Perşembe taşıma sonrası
+  çakışan düzenleme ve yeniden üretilen program reddi (plan sayısı, taşıma, hafta aynen);
+  haftalık XP tekilliği; döngü çarpanı; saat geri alma; öneri kabul/ret/bayat; artış
+  sınırı; check-in yokken artış yok; lastik yükü; dinlenme sayacının yeniden açılışta korunması.
+  Migration: M1 v2 SQLite verisi v3'e (tüm satırlar korunur; v3 hatasında v2 aynen kalır)
+  ve IndexedDB belge v2→v3.
+- `npm run export:web` → `dist/` üretildi.
+- `npm run test:web` → üç akış PASS: `web-persistence.mjs` (M0), `web-training.mjs` (M1) ve
+  yeni `web-m2.mjs` (Chromium 390×844, saat her gün 09:00 İstanbul'a sabit): sıra
+  değişikliği önizleme/kabul/yenileme → antrenman + 1:30 dinlenme → 40 sn ileri sar →
+  tarayıcıyı tamamen kapatıp aç → sayaç zaman damgasından devam (0:33) → bitir →
+  haftalık değerlendirme +40 XP (toplam 110), yenilemede korunur → Salı: Çekiş A'yı
+  Perşembe'ye taşı → İtiş B'yi Perşembe'ye al → çakışma kartı, onay kapalı, sürüm değişmedi
+  → Cuma ikinci bench seansı → Cumartesi: artış doğrulanmadan öneri yok → 2,5 kg doğrula →
+  öneri (önce 60 kg / sonra 62,5 kg) → teknik onayı olmadan kabul kapalı → kabul →
+  yenilemede "Kabul edildi" ve program sürümü 3 → Karakter'de amblem ve rozetler; sayfa hatası yok.
+  Ekran görüntüleri proje dosyalarında `avci-m2/`.
+- `npx expo-doctor` → 18/20; **2 kontrol ağ nedeniyle başarısız** ("Expo config schema":
+  `getaddrinfo ENOTFOUND exp.host`; "React Native Directory": sunucu yanıtı yok).
+  GEÇTİ SAYILMAZ.
+
+### Doğrulanmamış / açık noktalar
+- iPhone: migration 3, dinlenme sayacının gerçek arka plan/kilit ekranı sonrası davranışı,
+  sayısal klavye, VoiceOver ile amblem/rozet okuması — SINANMADI (web kanıtı cihaz kanıtı değildir).
+- Dinlenme bitişinde yerel bildirim/titreşim yok (bildirim izni M3 kapsamı).
+- "Hafif hafta" (performans düşüşü + yüksek yorgunluk) önerisi ve hareket bazında ağrı
+  bölgesi henüz yok. Değerlendirme yalnız içinde bulunulan hafta için yapılabilir
+  (kapanmış hafta yeniden açılmaz).
 
 ## 2026-11-09 / M0 düzeltmeleri + M1 / antrenman günlüğü
 
@@ -176,16 +304,16 @@ training-service), `apps/mobile/e2e/web-training.mjs`, `apps/mobile/package*.jso
 - Export/import/silme yok (M3).
 
 ## Next
-1. Oturumu bu daldan başlatıp `/agents` ile avci-* ajanlarını doğrula, `/resume-avci`.
-2. M2: TRAINING_RULES çift ilerleme önerisi (son iki karşılaştırılabilir seans, RIR≥2,
-   14 gün kapısı, en küçük artış ≤%5), önizleme/kabul/ret denetim kaydı, haftalık
-   değerlendirme (40 XP, haftalık döngü kimliği). Dinlenme sayacı.
-3. Yerel bilgisayarda `npx expo-doctor` ve `npx expo install --check`; EAS development
-   build ile iPhone'da M0+M1 akışını (uçak modu dahil) sına.
+1. Oturumu bu daldan başlatıp `/agents` ile avci-* ajanlarının yüklendiğini doğrula, `/resume-avci`.
+2. Yerel bilgisayarda `npx expo-doctor` ve `npx expo install --check`; EAS development build ile
+   iPhone'da M0–M2 akışını (migration 3, dinlenme sayacı + arka plan, uçak modu) sına.
+3. M3: Gelişim sekmesi (karşılaştırılabilir hareket grafikleri), yedek/dışa-içe aktarma ve
+   silme, yerel hatırlatma ve konuşma yetenek sınırları.
 
 ## Completed milestones
 - M0: web üzerinde tamam ve test edildi. Native kısmı gerçek cihazda doğrulanmadı.
 - M1: web üzerinde tamam ve test edildi (2026-11-09). Native kısmı gerçek cihazda doğrulanmadı.
+- M2: web üzerinde tamam ve test edildi (2026-11-09). Native kısmı gerçek cihazda doğrulanmadı.
 
 ## Update template
 For each slice: date / milestone / implemented behavior / changed paths /

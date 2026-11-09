@@ -114,32 +114,57 @@ export function validateMove(week: readonly PlannedSession[], slotId: string, to
 
 export interface ScheduleConflict {
   date: string;
-  sessions: { slotId: string; programDayId: string; title: string; plannedDate: string; moved: boolean }[];
+  /**
+   * same-day: two sessions would share this date.
+   * would-displace: a done, running or moved session of this week would vanish or change date.
+   */
+  kind: 'same-day' | 'would-displace';
+  sessions: { slotId: string; programDayId: string; title: string; plannedDate: string; moved: boolean; state: PlannedState }[];
 }
 
+const ref = (s: PlannedSession) => ({
+  slotId: s.slotId,
+  programDayId: s.programDayId,
+  title: s.title,
+  plannedDate: s.plannedDate,
+  moved: s.moved,
+  state: s.state,
+});
+
 /**
- * Dates from `today` on where the effective week (program days + existing
- * moves) holds more than one session. A plan edit producing any conflict must
- * be refused and shown; sessions are never moved or dropped silently.
- * Past dates are history and cannot be started, so they are not checked.
+ * Conflicts of a proposed effective week (program + existing moves) from
+ * `today` on. A plan change producing any conflict must be refused and shown;
+ * sessions are never moved or dropped silently. When `current` (the week
+ * under the accepted plan) is given, a done, in-progress or moved session of
+ * today or later must keep its slot and date in `next`. Past dates are history.
  */
-export function findScheduleConflicts(week: readonly PlannedSession[], today: string): ScheduleConflict[] {
+export function findScheduleConflicts(
+  next: readonly PlannedSession[],
+  today: string,
+  current: readonly PlannedSession[] = [],
+): ScheduleConflict[] {
+  const out: ScheduleConflict[] = [];
+  for (const s of current) {
+    if (s.date < today) continue;
+    if (s.state !== 'done' && s.state !== 'in-progress' && !s.moved) continue;
+    const kept = next.find((n) => n.slotId === s.slotId);
+    if (!kept || kept.date !== s.date) out.push({ date: s.date, kind: 'would-displace', sessions: [ref(s)] });
+  }
   const byDate = new Map<string, PlannedSession[]>();
-  for (const s of week) {
+  for (const s of next) {
     if (s.date < today) continue;
     byDate.set(s.date, [...(byDate.get(s.date) ?? []), s]);
   }
-  return [...byDate.entries()]
-    .filter(([, list]) => list.length > 1)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, list]) => ({
-      date,
-      sessions: list.map((s) => ({
-        slotId: s.slotId,
-        programDayId: s.programDayId,
-        title: s.title,
-        plannedDate: s.plannedDate,
-        moved: s.moved,
-      })),
-    }));
+  // A done/running session keeps occupying the date it happened on, even if the new plan
+  // would drop its day or place it elsewhere.
+  for (const s of current) {
+    if (s.date < today || (s.state !== 'done' && s.state !== 'in-progress')) continue;
+    if (next.some((n) => n.slotId === s.slotId && n.date === s.date)) continue;
+    const list = byDate.get(s.date) ?? [];
+    if (list.length > 0) byDate.set(s.date, [s, ...list]);
+  }
+  for (const [date, list] of byDate) {
+    if (list.length > 1) out.push({ date, kind: 'same-day', sessions: list.map(ref) });
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
 }

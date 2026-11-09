@@ -250,21 +250,18 @@ describe.each(backends)('M1 training ($name)', (backend) => {
     // Same day: move "Çekiş A" from Tuesday to today is refused (today is occupied by the done session).
     const pull = t.week.find((w) => w.title === 'Çekiş A')!;
     expect(await service.moveSession(pull.slotId, '2026-11-09')).toMatchObject({ status: 'rejected', reason: 'occupied' });
-    // Edit the plan so a NEW day lands on today; doing it grants nothing more.
+    // M2 fix: an edit that would move today's DONE session to Thursday and put a new day
+    // on today is refused as a whole (nothing is silently displaced) and grants nothing.
     const edited = structuredClone(t.plan!.program);
-    edited.days[0].weekday = 3; // İtiş A -> Thursday (already done this week, stays done)
+    edited.days[0].weekday = 3; // İtiş A -> Thursday
     edited.days.push({ id: 'extra', title: 'Ek gün', weekday: 0, exercises: [{ exerciseId: 'dead-bug', sets: 2, repMin: 8, repMax: 12, targetRir: null }] });
-    ok(await service.acceptProgram({ baseVersionId: t.plan!.id, program: edited, source: 'user-edit' }));
+    const r = await service.acceptProgram({ baseVersionId: t.plan!.id, program: edited, source: 'user-edit' });
+    expect(r.status === 'rejected' && r.reason).toBe('schedule-conflict');
+    expect(r.status === 'rejected' && r.conflicts!.map((c) => c.kind).sort()).toEqual(['same-day', 'would-displace']);
     const t2 = await service.loadTraining();
-    expect(t2.week.find((w) => w.programDayId === 'push-1')).toMatchObject({ state: 'done', date: '2026-11-12' });
-    const extraSlot = t2.week.find((w) => w.programDayId === 'extra')!.slotId;
-    const s2 = ok(await service.startWorkout(extraSlot));
-    ok(await service.logSet(s2.id, work('dead-bug', 10, 0, null)));
-    expect(ok(await service.finishWorkout(s2.id)).reward.status).toBe('already-completed');
-    expect(await service.startWorkout(t2.week.find((w) => w.programDayId === 'push-1')!.slotId)).toEqual({
-      status: 'rejected',
-      reason: 'already-done',
-    });
+    expect(t2.planCount).toBe(1);
+    expect(t2.week.find((w) => w.programDayId === 'push-1')).toMatchObject({ state: 'done', date: '2026-11-09' });
+    expect(await service.startWorkout(todaySlot)).toEqual({ status: 'rejected', reason: 'already-done' });
     expect((await service.loadToday()).progress.totalXp).toBe(60);
     expect(todayId).toBe((await service.loadToday()).today!.id);
   });
@@ -426,8 +423,13 @@ describe.each(backends)('M1 training ($name)', (backend) => {
     ok(await service.confirmTrainingProfile({ ...PROFILE, trainingDays: [1, 3] }));
     const p = ok(await service.proposeGeneratedProgram());
     expect(p.changes.map((c) => c.kind)).toContain('day-removed');
-    ok(await service.acceptProgram({ baseVersionId: p.baseVersionId, program: p.program, source: 'generated' }));
+    // Same day: today's done session would vanish from the week -> refused and shown in the preview.
+    expect(p.conflicts.map((c) => c.kind)).toEqual(['would-displace']);
+    const refused = await service.acceptProgram({ baseVersionId: p.baseVersionId, program: p.program, source: 'generated' });
+    expect(refused.status === 'rejected' && refused.reason).toBe('schedule-conflict');
+    // Next day the done session is history; the new split is accepted.
     clock.set('2026-11-10T07:00:00Z');
+    ok(await service.acceptProgram({ baseVersionId: p.baseVersionId, program: p.program, source: 'generated' }));
     const t = await service.loadTraining();
     const tue = t.week.find((w) => w.date === '2026-11-10')!;
     expect(tue).toMatchObject({ title: 'Tüm vücut A', state: 'planned' });

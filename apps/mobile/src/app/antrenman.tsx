@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import type { Program, ProgramChange } from '@/domain/training/program';
+import type { ScheduleConflict } from '@/domain/training/schedule';
 import type { SetInput } from '@/domain/training/workout';
 import type { CompletionResult, TrainingResult, TrainingSnapshot, WeeklyReviewSnapshot } from '@/services/avci-service';
 import { useAvci } from '@/ui/avci-context';
@@ -29,6 +30,7 @@ interface Proposal {
   changes: ProgramChange[];
   baseVersionId: string | null;
   skippedPatterns: string[];
+  conflicts: ScheduleConflict[];
 }
 
 const rejectText = (r: TrainingResult<unknown>) => {
@@ -187,6 +189,7 @@ function Training() {
           changes={proposal.changes}
           hasCurrent={proposal.baseVersionId !== null}
           skippedPatterns={proposal.skippedPatterns}
+          conflicts={proposal.conflicts}
           onCancel={snap.plan ? () => (setMode('main'), setProposal(null)) : undefined}
           onAccept={async () => {
             const r = await run(() =>

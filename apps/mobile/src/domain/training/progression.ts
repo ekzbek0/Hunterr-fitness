@@ -85,6 +85,17 @@ export type HoldReason =
   | 'increment-over-cap'
   | 'already-at-target';
 
+/** Holds caused by today's readiness only; they say nothing about the evidence. */
+export const READINESS_HOLDS: readonly HoldReason[] = [
+  'checkin-missing',
+  'pain-or-illness-today',
+  'safety-unknown-today',
+  'recovery-freeze',
+];
+
+export const isReadinessHold = (d: ProgressionDecision) =>
+  d.kind === 'hold' && d.reasons.length > 0 && d.reasons.every((r) => READINESS_HOLDS.includes(r));
+
 export type RebaselineReason = 'stale-data' | 'training-gap';
 
 export type ProgressionDecision =
