@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState } from 'react-native';
 
 import { openRepository } from '@/data/open-repository';
+import type { AvciRepository } from '@/data/types';
 import { AvciService, type CompletionResult, type TodaySnapshot } from '@/services/avci-service';
 
 interface AvciContextValue {
@@ -11,6 +12,8 @@ interface AvciContextValue {
   /** Increments after every reload so other screens (Antrenman) can re-read storage. */
   dataVersion: number;
   service: AvciService | null;
+  /** The open repository, for M3 services (progress, backup) that build on the same storage. */
+  repo: AvciRepository | null;
   refresh(): Promise<void>;
   /** Runs a mutation, then reloads the snapshot from storage (never from React state). */
   act(fn: (s: AvciService) => Promise<CompletionResult | unknown>): Promise<CompletionResult | unknown>;
@@ -21,6 +24,7 @@ const Ctx = createContext<AvciContextValue | null>(null);
 
 export function AvciProvider({ children }: { children: ReactNode }) {
   const [service, setService] = useState<AvciService | null>(null);
+  const [repo, setRepo] = useState<AvciRepository | null>(null);
   const [snapshot, setSnapshot] = useState<TodaySnapshot | null>(null);
   const [status, setStatus] = useState<AvciContextValue['status']>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -32,12 +36,13 @@ export function AvciProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const repo = await openRepository();
-        const svc = new AvciService(repo);
+        const r = await openRepository();
+        const svc = new AvciService(r);
         const snap = await svc.loadToday();
-        if (cancelled) return void repo.close();
+        if (cancelled) return void r.close();
         serviceRef.current = svc;
         setService(svc);
+        setRepo(r);
         setSnapshot(snap);
         setStatus('ready');
         setError(null);
@@ -86,11 +91,11 @@ export function AvciProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<AvciContextValue>(
-    () => ({ status, error, snapshot, dataVersion, service, refresh, act, retry: () => {
+    () => ({ status, error, snapshot, dataVersion, service, repo, refresh, act, retry: () => {
         setStatus('loading');
         setAttempt((n) => n + 1);
       } }),
-    [status, error, snapshot, dataVersion, service, refresh, act],
+    [status, error, snapshot, dataVersion, service, repo, refresh, act],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
