@@ -215,3 +215,14 @@ task-day travel policy, persistence adapter, versions, and sync conflict policy.
   ulaştırmıyordu. `tests/backup-recovery.test.ts` her iki depoda önce başarısız, sonra geçti;
   genişletilmiş `e2e/web-recovery.mjs` henüz tarayıcıda çalıştırılamadı. Düzeltme ayrı
   `codex/backup-recovery-preview` dalında; gerçek iPhone kanıtı değildir.
+
+- 2026-11-10 (web kabul ortamı): Yerel Chromium süreç izni nedeniyle başlayamadığından,
+  `.github/workflows/mobile-web-checks.yml` aynı kilit dosyasıyla temiz kurulum, tür/lint,
+  iki depo testleri, web export ve altı gerçek Chromium akışını sırayla çalıştırır.
+  Yalnız çalışma dallarındaki uygulama/workflow değişikliklerinde tetiklenir. İzinler
+  `contents: read`, checkout kimlik bilgileri kalıcı tutulmaz; secrets, dağıtım, imzalama
+  veya yayımlama adımı yoktur. Resmî action'lar tam commit SHA ile sabittir.
+  Public repo için standart `ubuntu-24.04` runner kullanılır; repo private olursa iş atlanır.
+  Dayanak: [GitHub workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
+  Gerçek sonuçlar ve test edilen commit PROGRESS.md'de kaydedilir; bu web kanıtıdır,
+  native kabul kanıtı değildir.

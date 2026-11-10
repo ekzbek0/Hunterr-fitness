@@ -1,6 +1,35 @@
 # Current progress
 
 ## Status
+Son doğrulama (2026-11-10): `bbe43f7` için GitHub Actions temiz ortamında
+357 test, typecheck, lint, web export ve **altı Chromium kabul akışı GEÇTİ**.
+Kaynak: https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42793877759
+M5 gerçek cihaz kanıtı hâlâ yok; aşağıdaki eski web engeli tarihsel kayıttır.
+
+## 2026-11-10 / CI kanıtı doğrulaması ve M5 test kaydı
+
+- GitHub dal listesi ve gerçek uzak ref'ler yeniden okundu: Claude devam dalı hâlâ
+  `claude/project-thread-odi8ww` (`4ec91f4`); daha yeni Claude dalı bulunmadı.
+  Kurtarma düzeltmesi `codex/backup-recovery-preview` dalında, PR #1 taslak ve açık.
+- Actions run `42793877759`, job `129753911574`: çalıştırılan commit tam olarak
+  `bbe43f7e91e9fa4aee8f840913b0ca10093b144b`. İş adımları ve ham günlükler bağımsız
+  okundu; Claude'un raporu kanıt alınmadı. Temiz `npm ci`, 18 dosya/357 test,
+  typecheck, lint, web export başarılı. Altı PASS satırı: persistence, training,
+  M2, M3, layout, recovery. Son akış bozuk mevcut tablo → bilinmeyen toplamlar
+  uyarısı → açık geri yükleme → yeniden açılışta 10 XP adımlarını gerçekten çalıştırdı.
+- Aynı uygulama ağacı bu kontrolde yerelde yeniden sınandı: `npm test` (357/357),
+  `npm run typecheck`, `npm run lint`, `npm run export:web` başarılı.
+- Kaynakta ağ gönderimi/analiz/kullanıcı verisi log çağrısı taraması eşleşme vermedi;
+  bu OS/ağ trafiği veya gerçek cihaz gizlilik kanıtı değildir.
+- `docs/IPHONE_BETA_CHECKLIST.md` 22 gerçek cihaz akışı ve kanıt alanlarıyla hazırlandı;
+  tümü BEKLİYOR. `preview` internal/Release/developmentClient=false doğrulandı.
+  Build, hesap/imza seçimi ve native test yapılmadı. M5 tamamlandı sayılmaz.
+- Bağlı tarayıcı aracı yine erişilemedi (`Unknown tool browser.js`); Claude'a mesaj
+  gönderilmedi, çalışan işi ve Superpowers oturum erişimi doğrulanmadı.
+- Sonraki somut iş: Claude erişince PR farkını bağımsız inceleyip çalışma dalına aktar;
+  ardından kullanıcının Expo/Apple kimlik ve imzalama seçimiyle gerçek cihaz testlerini
+  başlat. Main'e birleştirme, yayın, satın alma yok.
+
 Son bağımsız kontrol ve dar kapsamlı kurtarma düzeltmesi: aşağıdaki 2026-11-10 inceleme
 bölümü. Claude dalının `4ec91f4` sürümü incelendi; düzeltme ayrı
 `codex/backup-recovery-preview` dalında korunuyor. Claude dalına aktarılmadı.
