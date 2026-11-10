@@ -13,22 +13,42 @@ import { Button, Card, Chip, Screen, StorageGate, T } from '@/ui/components';
 import { C } from '@/ui/theme';
 
 export default function SettingsScreen() {
-  return (
-    <StorageGate>
-      <Settings />
-    </StorageGate>
-  );
+  const { status } = useAvci();
+  // Loading uses the shared gate. An error does NOT hide this screen: the data
+  // section is the user's way out when the stored records cannot be opened.
+  if (status === 'loading') {
+    return (
+      <StorageGate>
+        <></>
+      </StorageGate>
+    );
+  }
+  return <Settings />;
 }
 
 function Settings() {
-  const { snapshot } = useAvci();
+  const { snapshot, status, error, retry, repo } = useAvci();
   const [saved, setSaved] = useState<string | null>(null);
-  const profile = snapshot?.profile;
+  const broken = status === 'error';
+  const profile = broken ? null : snapshot?.profile;
   // One stable tree: the data section keeps its state (and messages) when the profile
-  // appears or disappears (restore on a fresh install, delete all).
+  // appears or disappears (restore on a fresh install, delete all, recovery from an error).
   return (
     <Screen title="Ayarlar">
-      {profile ? (
+      {broken ? (
+        <Card accent={C.danger}>
+          <View testID="storage-error" style={{ gap: 8 }}>
+            <Text style={T.h3}>Kayıtlar açılamadı</Text>
+            <Text style={T.muted}>{error}</Text>
+            <Text style={T.body}>
+              {repo
+                ? 'Önce tekrar dene. Sorun sürerse aşağıdan mevcut kayıtların yedeğini alabilir, sağlam bir yedeği geri yükleyebilir ya da tüm verileri silip baştan başlayabilirsin. Hiçbir kayıt kendiliğinden silinmez veya onarılmaz.'
+                : 'Depolama hiç açılamadığı için yedekleme ve silme de kullanılamıyor. Tekrar dene; sorun sürerse uygulamayı kapatıp yeniden aç.'}
+            </Text>
+            <Button label="Tekrar dene" onPress={retry} />
+          </View>
+        </Card>
+      ) : profile ? (
         // Re-key on save so the form re-initialises from the stored profile.
         <SettingsForm key={profile.confirmedAt} profile={profile} saved={saved} setSaved={setSaved} />
       ) : (
@@ -38,8 +58,8 @@ function Settings() {
           </Text>
         </Card>
       )}
-      <SpeechSettings />
-      {profile && <ReminderSettings />}
+      {!broken && <SpeechSettings />}
+      {!broken && profile && <ReminderSettings />}
       <DataSection timezone={profile ? (snapshot?.today?.timezone ?? profile.timezone) : undefined} />
     </Screen>
   );
@@ -98,13 +118,13 @@ function SettingsForm({
 }
 
 function DataSection({ timezone }: { timezone?: string }) {
-  const { snapshot, repo, reminders, refresh } = useAvci();
+  const { repo, reminders, refresh } = useAvci();
   const backup = useMemo(() => (repo ? new BackupService(repo) : null), [repo]);
   return (
     <>
       <Card>
         <Text style={T.h3}>Veri</Text>
-        <Text style={T.muted}>Depolama: {snapshot?.storageKind}</Text>
+        <Text style={T.muted}>Depolama: {repo?.kind ?? 'açılamadı'}</Text>
         {timezone && <Text style={T.muted}>Gün sınırı için saat dilimi: {timezone}</Text>}
       </Card>
       {backup && (

@@ -22,7 +22,7 @@ export function Screen({ title, children }: { title: string; children: ReactNode
 
 /** Shared loading / error states for every screen that depends on storage. */
 export function StorageGate({ children }: { children: ReactNode }) {
-  const { status, error, retry } = useAvci();
+  const { status, error, retry, repo } = useAvci();
   if (status === 'loading') {
     return (
       <View style={styles.center} accessibilityLabel="Kayıtlar yükleniyor">
@@ -37,6 +37,11 @@ export function StorageGate({ children }: { children: ReactNode }) {
         <Text style={styles.h2}>Kayıtlar açılamadı</Text>
         <Text style={styles.muted}>{error}</Text>
         <Button label="Tekrar dene" onPress={retry} />
+        {repo && (
+          <Text style={styles.muted}>
+            Sorun sürerse Ayarlar sekmesinden yedek alabilir, bir yedeği geri yükleyebilir veya tüm verileri silebilirsin.
+          </Text>
+        )}
       </View>
     );
   }

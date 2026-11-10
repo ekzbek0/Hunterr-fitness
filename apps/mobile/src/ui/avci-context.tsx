@@ -41,6 +41,7 @@ export function AvciProvider({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
   const [dataVersion, setDataVersion] = useState(0);
   const serviceRef = useRef<AvciService | null>(null);
+  const repoRef = useRef<AvciRepository | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,16 +49,21 @@ export function AvciProvider({ children }: { children: ReactNode }) {
       try {
         // Leftover backup copies (e.g. the app was killed while the share sheet was open) are removed at start.
         sweepBackupTemp();
-        const r = await openRepository();
-        const svc = new AvciService(r);
-        const snap = await svc.loadToday();
-        if (cancelled) return void r.close();
+        // The repository is opened once and reused by "Tekrar dene". It is published
+        // BEFORE the first read, so that Ayarlar can still export a backup, restore one
+        // or delete everything when the stored records cannot be read.
+        const r = repoRef.current ?? (await openRepository());
+        repoRef.current = r;
+        const svc = serviceRef.current ?? new AvciService(r);
         serviceRef.current = svc;
-        const rem = new ReminderService(r, createReminderScheduler());
+        const rem = remindersRef.current ?? new ReminderService(r, createReminderScheduler());
         remindersRef.current = rem;
+        if (cancelled) return;
         setService(svc);
         setRepo(r);
         setReminders(rem);
+        const snap = await svc.loadToday();
+        if (cancelled) return;
         void rem.reconcile().then((res) => !cancelled && setReminderSync(res));
         setSnapshot(snap);
         setStatus('ready');
@@ -80,6 +86,8 @@ export function AvciProvider({ children }: { children: ReactNode }) {
       setSnapshot(await svc.loadToday());
       setDataVersion((n) => n + 1);
       setError(null);
+      // A restore or delete-all done from the error screen makes the records readable again.
+      setStatus((st) => (st === 'error' ? 'ready' : st));
       // Time, program, move or day changes all pass through here; reconciling is idempotent.
       const rem = remindersRef.current;
       if (rem) void rem.reconcile().then(setReminderSync);
