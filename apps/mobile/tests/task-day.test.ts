@@ -65,6 +65,15 @@ describe('task day lifecycle', () => {
     expect(decideTaskDay(d, new Date('2026-03-09T04:00:00Z'), NY).action).toBe('rollover');
   });
 
+  it('the 25-hour day at the end of DST is still one day: no early rollover, no second day', () => {
+    // US DST ends 2026-11-01 02:00 local. Nov 1 runs from 04:00Z to Nov 2 05:00Z (25 hours).
+    expect(localDateIn(new Date('2026-11-01T04:00:00Z'), NY)).toBe('2026-11-01');
+    const d = day('2026-11-01', NY, '2026-11-01T12:00:00Z');
+    // 24 hours after local midnight it is still Nov 1 (the repeated hour).
+    expect(decideTaskDay(d, new Date('2026-11-02T04:30:00Z'), NY)).toEqual({ action: 'resume', clockAnomaly: false });
+    expect(decideTaskDay(d, new Date('2026-11-02T05:00:00Z'), NY)).toEqual({ action: 'rollover', localDate: '2026-11-02' });
+  });
+
   it('rejects an invalid clock', () => {
     expect(() => decideTaskDay(null, new Date('x'), IST)).toThrow();
   });

@@ -105,9 +105,15 @@
   başlangıçtan veya bu en yüksek okumadan 2 sn'den fazla geride görülürse geçen süre
   bilinemez: sayaç kalıcı olarak "belirsiz" olur, kalan süre gösterilmez (asla uzamaz), yeniden
   açılışta da aynı görünür; kullanıcı yeniden başlatır veya kapatır. Tolerans içindeki geri
-  okuma en yüksek okuma sayılır (süre yine uzamaz). Kalan risk: uygulama kapalıyken saat,
-  son kayıttan sonraki ~5 sn + 2 sn tolerans içinde geri alınırsa fark edilemez; bu durumda
-  bile gösterilen süre en fazla bu kadar uzun olabilir. Doğrulama: tests/m2-domain.test.ts,
+  okuma en yüksek okuma sayılır (süre yine uzamaz). Kalan risk (2026-11-10 QA
+  incelemesiyle DÜZELTİLDİ, önceki "en fazla ~7 sn" ifadesi yanlıştı): geri adım yalnız saat,
+  görülen en yüksek okumanın gerisine düşerse fark edilir. Uygulama gözlem yapmadığı bir
+  aralıkta (arka planda/kapalıyken) saat geri alınır ve geri alma miktarı o aralıktan küçükse
+  yeni okuma hâlâ en yüksek okumanın ilerisindedir: fark edilmez ve sayaç geri alma miktarı
+  kadar geç biter. Hata geri alma miktarıyla sınırlıdır, sabit bir saniye sayısıyla değil.
+  Süreç içi monoton saat bunu kapatmaz (yeniden başlatmada sıfırlanır, iOS'ta askıdayken
+  davranışı doğrulanmadı), o yüzden eklenmedi. Ayrıca: bitmiş olarak görülmüş sayaç, sonradan
+  saat geri alınsa da "bitti" kalır ("belirsiz"e dönmez). Doğrulama: tests/m2-domain.test.ts,
   tests/m2-service.test.ts (iki depo, yeniden başlatma), e2e/web-m3.mjs.
 - 2026-11-09: Yerel hatırlatıcılar tamamen cihazda (expo-notifications, yalnız yerel; push
   yetkisi `enableRemoteNotifications: false`, sunucu/hesap yok). Saf `planReminders` önümüzdeki
@@ -136,13 +142,66 @@
   kayıt/ilişki/XP tutarı doğrulamasından geçmek zorundadır. Dosya şifrelenmez.
 - 2026-11-10: Tümünü silme sırası: önce hatırlatıcı iptali, sonra veri. İptal başarısızsa silme
   yapılmaz (silinmiş veri için bildirim gelmesi, yarım silmeden daha kötü). Otomatik yedek/geri
-  yükleme yok. Ölçüm silme mezar taşıdır; "tümünü sil" mezar taşlarını da kaldırır.
+  yükleme yok. (Ölçüm silme o gün mezar taşıydı; aşağıdaki bütünlük turu kararıyla kalıcı silme oldu.)
 - 2026-11-10: Gelişim: seri anahtarı hareket|birim|yük türü; aynı günün seansları tek nokta;
   yarıda bırakılan seanslar geçmişte/grafikte yok; ısınma ayrı sayılır; 1RM/BMI/görünüş puanı yok.
   Süreklilikte biten antrenman günü "antrenman", aksi halde ana görev çözümü belirler; planlı
   toparlanma antrenmanla aynı olumlu ağırlıkta gösterilir. Gelişim salt okurdur, görev günü açmaz.
 - 2026-11-10: M3 kayıtları migration 4 / belge v4 ile yalnız ekleyici olarak geldi; ayarlar tek
   JSON satırı (`app_setting`), varsayılan: sesli okuma düğmeleri açık, hatırlatıcılar kapalı.
+
+- 2026-11-10 (bütünlük turu): Yedek doğrulaması iki yönlüdür ve hiçbir şeyi onarmaz. Her görev
+  gününde tam olarak dört görev olmalı (`checkin`, `core`, `habit-1`, `habit-2`; tür ve taban XP
+  sabit: 10/60/15/15); bilinmeyen görev anahtarı reddedilir. Tamamlanmış her görevin tam bir XP
+  kaydı, her XP kaydının tamamlanmış bir görevi vardır; açık görev için XP reddedilir. Kontrol
+  görevi ⇔ kontrol kaydı; haftalık değerlendirme ⇔ hafta XP kaydı. Ana göreve bağlı antrenman
+  aynı görev gününe ait, bitmiş ve çözümü "antrenman" olmalı; bir antrenman en çok bir göreve
+  bağlanır; antrenmanın program günü kimliği, gününün haftasından türetilenle aynı olmalı.
+  Gerekçe: bu dosyalar kabul edilince görevler kayboluyor ya da ödül kalıcı olarak alınamaz
+  oluyordu. Taban XP'nin sabit olması bilinçli: v1 yedekleri bu ekonomiyle yazılır; ekonomi
+  değişirse yedek sürümü artar. Doğrulama: tests/m3-backup.test.ts (iki depo).
+- 2026-11-10: Sıra kuralı. Uygulama "en yüksek sıra numarası = en son gün/hafta" varsayar. Bu
+  yüzden yedekte görev günü tarihleri ve hafta başlangıçları sıra numarasıyla birlikte kesin
+  artmalı, hiçbir hafta kayıtlı son görev gününden sonra başlamamalı. Aksi dosya uygulamayı
+  açılamaz hâle getiriyordu (aynı tarihi yeniden açmaya çalışıp benzersizlik hatası) ya da
+  haftayı sonsuza dek sabitliyordu.
+- 2026-11-10: Gelecekten yedek reddedilir (`domain/backup/clock.ts`). Yedekteki son görev
+  gününün `lastSeenAt` değeri cihaz saatinden 5 dk'dan (görev günü toleransı) ilerideyse ya da
+  tarihi, o günün kendi saat diliminde "şimdi"nin tarihinden sonraysa önizleme ve içe aktarma
+  reddeder. Gerekçe: ilki ödülleri dondurur, ikincisi "bugün"ü o tarihe kadar sabitler.
+  Saat dilimi günün kendi kaydından alınır, böylece daha doğuda alınmış yedek yolculuk
+  sonrasında haksız yere reddedilmez. Saat düzeltilince aynı dosya yüklenir; dosya değiştirilmez.
+- 2026-11-10: Öneri kabulünde bayatlık denetimi genişledi: saklanan önerinin önceki/yeni
+  reçetesi ve ekipman artışı, o anda kurallarla yeniden hesaplananla aynı değilse öneri
+  "bayat" işaretlenir ve uygulanmaz. Gerekçe: aynı kanıt anahtarını taşıyan ama hedefi elle
+  değiştirilmiş (yedekten gelen) öneri eskiden uygulanıyordu. Saklanan öneri içeriği asla
+  yük kaynağı değildir; kaynak her zaman belirleyici kuraldır.
+- 2026-11-10: Ölçüm silme artık kalıcı silmedir (mezar taşı yok) ve silinmiş ölçüm yedeğe
+  girmez. Gerekçe: gizlilik incelemesi; kullanıcı "sildim" dediği sağlık verisinin cihazda ve
+  dışa aktarılan dosyada kalmasını beklemez. M4 notu: eşitleme geldiğinde "silinen kaydın geri
+  dirilmemesi" (ACCEPTANCE 16) için içerik taşımayan, yalnız kimlik + silinme zamanı tutan bir
+  mezar taşı gerekecek; bu, eşitleme tasarımının parçası olarak eklenecek.
+- 2026-11-10: "Tümünü sil" sonrası depo temizliği: SQLite'ta `secure_delete = ON`,
+  `wal_checkpoint(TRUNCATE)` ve `VACUUM`; sonuç `storagePurged` olarak arayüze taşınır,
+  doğrulanamazsa "kalıntı kalmadı" denmez. IndexedDB'de tarayıcı kalıntısı doğrulanamaz
+  (`false`). Arayüz ayrıca dışa aktarılmış dosyaların ve cihaz/iCloud yedeklerinin bu silmenin
+  kapsamı dışında olduğunu yazar. Teslim edilmiş bildirimler de temizlenir.
+- 2026-11-10: Geçici yedek dosyaları. Yalnız uygulamanın kendi önbellek dizinindeki kopyalar
+  silinir; kullanıcının kaydettiği yedeğe dokunulmaz. Paylaşım iptal/hata, okuma hatası ve
+  boyut reddi yollarının hepsi temizlik yapar; temizlik başarısız ya da doğrulanamazsa
+  arayüz bunu söyler. Açılışta ve "tümünü sil"de artakalan `avci-yedek-*.json` kopyaları
+  süpürülür. Belge seçicinin önbellek dizini adı gerçek cihazda doğrulanmadı.
+- 2026-11-10: SQLite sürücüsü tek bağlantı + sıralı kuyruk + `BEGIN IMMEDIATE`
+  (`data/sqlite/serial-driver.ts`); uygulama (expo-sqlite) ve testler (node:sqlite) aynı
+  sarmalayıcıyı kullanır. `withExclusiveTransactionAsync` bırakıldı: her işlem için ikinci bir
+  bağlantı açıyor, o bağlantı `foreign_keys`/`secure_delete` ayarlarını taşımıyor ve düz `BEGIN`
+  ile başlıyordu (QA, kaynak okuyarak). Gerçek iPhone'da ÇALIŞTIRILMADI.
+- 2026-11-10: Kayıtlar okunamadığında çıkış yolu. Depo, ilk okumadan önce yayımlanır; okuma
+  hatasında Ayarlar açık kalır ve yedek alma, geri yükleme, tümünü silme kullanılabilir.
+  Hiçbir kayıt kendiliğinden onarılmaz veya silinmez. Doğrulama: e2e/web-recovery.mjs (yalnız web).
+- 2026-11-10: `preview` EAS profili günlük kullanım derlemesidir: `distribution: internal`,
+  `developmentClient: false`, iOS `Release`; uygulama kodu derlemenin içindedir ve geliştirme
+  sunucusu gerekmez. `development` profili ayrı kalır (dev client, Metro gerekir).
 
 Record implementation choices here with reason and validation, including
 task-day travel policy, persistence adapter, versions, and sync conflict policy.
