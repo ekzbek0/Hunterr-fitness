@@ -166,6 +166,32 @@ describe.each(backends)('backup service ($name)', (backend) => {
     }
   });
 
+  // The two files the independent check found accepted. Each is its own test so the
+  // failure before the fix is visible per case (verified red against the old validator).
+  it('REGRESSION: a task day without its quests is rejected (was: restore succeeded and the day lost its quests)', async () => {
+    await seed(repo, clock);
+    const { json } = await backup.exportBackup();
+    const before = norm(await dump(repo));
+    const text = tamper(json, (d) => {
+      const day = d.taskDays[0];
+      d.taskDays.push({ ...day, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', sequence: day.sequence + 1, localDate: '2026-11-10' });
+    });
+    expect((await backup.previewImport(text)).ok).toBe(false);
+    expect((await backup.importBackup(text)).status).toBe('rejected');
+    expect(norm(await dump(repo))).toBe(before);
+  });
+
+  it('REGRESSION: a completed quest without its XP entry is rejected (was: XP dropped and could not be earned again)', async () => {
+    const service = await seed(repo, clock);
+    const { json } = await backup.exportBackup();
+    const before = norm(await dump(repo));
+    const text = tamper(json, (d) => void (d.ledger = d.ledger.filter((e) => e.slotKey !== 'core')));
+    expect((await backup.previewImport(text)).ok).toBe(false);
+    expect((await backup.importBackup(text)).status).toBe('rejected');
+    expect(norm(await dump(repo))).toBe(before);
+    expect((await service.loadToday()).progress.totalXp).toBe(110);
+  });
+
   it('REGRESSION: quests and XP must agree in both directions; inconsistent files are rejected, nothing is repaired', async () => {
     const service = await seed(repo, clock);
     const { json } = await backup.exportBackup();

@@ -53,7 +53,9 @@ function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
   return (
     <Pressable {...(props as PressableProps)} accessibilityRole="tab" accessibilityState={{ selected: !!isFocused }} style={styles.tab}>
       <View style={[styles.pill, isFocused && styles.pillActive]}>
-        <Text style={[styles.tabText, isFocused && styles.tabTextActive]}>{children}</Text>
+        <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={[styles.tabText, isFocused && styles.tabTextActive]}>
+          {children}
+        </Text>
       </View>
     </Pressable>
   );
@@ -66,10 +68,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: C.border,
     paddingTop: S.sm,
-    paddingHorizontal: S.sm,
+    paddingHorizontal: 4,
   },
-  tab: { flex: 1, minHeight: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' },
-  pill: { paddingVertical: S.sm, paddingHorizontal: S.md, borderRadius: 20 },
+  // Width follows the label ("Antrenman" is the longest), so five tabs fit at 320 pt.
+  tab: { flexGrow: 1, flexShrink: 0, flexBasis: 'auto', minHeight: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' },
+  pill: { paddingVertical: S.sm, paddingHorizontal: 2, borderRadius: 20, alignSelf: 'stretch', alignItems: 'center' },
   pillActive: { backgroundColor: C.surfaceRaised },
   tabText: { color: C.textMuted, fontSize: 14, fontWeight: '600' },
   tabTextActive: { color: C.text },
