@@ -205,3 +205,13 @@
 
 Record implementation choices here with reason and validation, including
 task-day travel policy, persistence adapter, versions, and sync conflict policy.
+
+- 2026-11-10 (bağımsız kurtarma incelemesi): Sağlam yedeğin önizlemesi, mevcut bozuk
+  kayıtların okunabilmesine bağlı değildir. Gelen dosya tüm biçim/bütünlük/saat denetimlerinden
+  geçer; mevcut özet okunamıyorsa `current: null` ile "bilinmiyor" gösterilir ve okunamayanlar
+  dahil tüm kayıtların değişeceği açıkça yazılır. Otomatik onarım, sessiz sıfırlama veya
+  tahmini XP yoktur. Açık geri yükleme onayı ve işlem içi doğrulama korunur. Gerekçe:
+  `4ec91f4` sürümünde bozuk SQLite JSON'u veya IndexedDB tablosu sağlam yedeği de önizlemeye
+  ulaştırmıyordu. `tests/backup-recovery.test.ts` her iki depoda önce başarısız, sonra geçti;
+  genişletilmiş `e2e/web-recovery.mjs` henüz tarayıcıda çalıştırılamadı. Düzeltme ayrı
+  `codex/backup-recovery-preview` dalında; gerçek iPhone kanıtı değildir.

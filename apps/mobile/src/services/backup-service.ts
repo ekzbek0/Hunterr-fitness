@@ -41,7 +41,8 @@ export type ImportPreview =
       exportedAt: string;
       version: number;
       appSchema: string;
-      current: BackupSummary;
+      /** null when the current records cannot be read; never invent zero totals for recovery. */
+      current: BackupSummary | null;
       backup: BackupSummary;
       /** Always true: a restore replaces all local data; it is not a merge. */
       replacesAll: true;
@@ -113,13 +114,22 @@ export class BackupService {
     if (!parsed.ok) return parsed;
     const ahead = checkBackupClock(parsed.envelope.data, this.clock.now());
     if (ahead.length > 0) return { ok: false, errors: ahead, totalErrors: ahead.length };
-    const current = await this.repo.transaction((tx) => tx.dumpAll());
+    // Recovery must not depend on reading the damaged records being replaced.
+    // Validate the incoming file first, then attempt an honest impact summary.
+    // A failed current read does not change or repair it; restore still needs
+    // explicit confirmation and revalidates the backup before atomic replacement.
+    let current: BackupSummary | null = null;
+    try {
+      current = summarizeBackup(await this.repo.transaction((tx) => tx.dumpAll()));
+    } catch {
+      // Unknown counts are displayed as unknown, rather than as an empty database.
+    }
     return {
       ok: true,
       exportedAt: parsed.envelope.exportedAt,
       version: parsed.envelope.version,
       appSchema: parsed.envelope.appSchema,
-      current: summarizeBackup(current),
+      current,
       backup: summarizeBackup(parsed.envelope.data),
       replacesAll: true,
       notice: RESTORE_REPLACES_NOTICE,

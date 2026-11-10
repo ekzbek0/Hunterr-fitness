@@ -1,10 +1,75 @@
 # Current progress
 
 ## Status
+Son bağımsız kontrol ve dar kapsamlı kurtarma düzeltmesi: aşağıdaki 2026-11-10 inceleme
+bölümü. Claude dalının `4ec91f4` sürümü incelendi; düzeltme ayrı
+`codex/backup-recovery-preview` dalında korunuyor. Claude dalına aktarılmadı.
+
 M0–M3 web üzerinde çalışıyor ve test edildi (M3: dinlenme sayacı saat düzeltmesi, Gelişim
 sekmesi, yedekleme/geri yükleme/silme, sesli okuma, yerel hatırlatıcılar, EAS hazırlığı).
 Native (iPhone) davranışı — SQLite migration 4, bildirimler, sesli okuma, paylaşım/dosya
 seçici dahil — gerçek cihazda SINANMADI.
+
+## 2026-11-10 / Bağımsız kontrol ve okunamayan kayıttan yedekle kurtarma
+
+### Kaynak ve inceleme kapsamı
+- GitHub dal listesi ve Git geçmişi kontrol edildi: Claude'un en ileri devam dalı
+  `claude/project-thread-odi8ww`, incelenen commit `4ec91f4e4a0ac74b0668c91f8c9d838c8e7dbeab`.
+  main'e birleştirme, yayın, satın alma, hesap veya imzalama işlemi yapılmadı.
+- İnceleyen Codex, incelenen Claude kodunun yazarı değildir. Kod, kabul ölçütleri ve
+  testler doğrudan okundu/çalıştırıldı; Claude raporu test kanıtı olarak kullanılmadı.
+- Dört zorunlu slot, görev/XP ve hafta/XP ilişkileri, antrenman bağlantıları, geçici dosya
+  çekirdeği, silme, SQLite işlem kuyruğu ve kurtarma arayüzü incelendi. Uygulama kaynaklarında
+  ağ gönderimi, analiz servisi, istemci sırrı veya kullanıcı verisi loglama çağrısı bulunmadı;
+  bu kaynak incelemesidir, ağ trafiği veya işletim sistemi incelemesi değildir.
+- Native geçici dosya testleri saf çekirdek/sahte dosya sistemindedir. Expo belge seçicisi,
+  paylaşım menüsü ve gerçek önbellek dizini bu kontrolde de cihazda doğrulanmadı.
+
+### Bulgu ve düzeltme
+- Mevcut kayıtlar okunamayınca Ayarlar açılabiliyordu, ancak `previewImport` mevcut
+  deponun tamamını okuyup özetlemek zorundaydı. SQLite'ta bozuk `profile.habit_keys` JSON'u,
+  IndexedDB'de bozuk `ledger` tablosu sağlam yedeğin önizlemesini de engelliyordu.
+- `tests/backup-recovery.test.ts` iki depoda önce BAŞARISIZ çalıştırıldı (JSON okuma ve
+  özetleme hataları). Düzeltmeden sonra iki test de geçti. Gelen dosya önce tam doğrulanır;
+  mevcut özet okunamıyorsa `current: null` olur. Arayüz mevcut sayılar/XP için "bilinmiyor"
+  ve tüm mevcut verilerin değiştirileceği uyarısını gösterir; 0 uydurmaz.
+- Önizleme mevcut kayıtları onarmaz/silmez. Geçersiz gelen dosya reddedilir; açık onaydan
+  sonraki geri yükleme aynı tam doğrulama ve tek işlemde değiştirme yolunu kullanır.
+  Testler bozuk depoya dokunulmadığını ve sağlam yedeğin 10 XP ile geri geldiğini doğrular.
+- Bu düzeltmenin yazarı Codex'tir; ayrıca başka bir kişi/ajan tarafından incelenmedi.
+  Claude ile bağlantı kurulunca bu dar değişiklik ve tarayıcı regresyonu incelenmelidir.
+
+### Gerçek kontroller (`apps/mobile`)
+- İncelenen `4ec91f4`: `npm test` → 17 dosya / 355 test geçti;
+  `npx tsc --noEmit`, `npm run lint`, `npm run export:web` geçti.
+- `npx expo-doctor` → **20/20**; `npx expo install --check` → **Dependencies are up to date**.
+  Bu iki sonuç bağımsız ortamda alındı; önceki ağ hatalarının geçmiş kayıtları değiştirilmedi.
+- Düzeltme: `npx vitest run tests/backup-recovery.test.ts tests/m3-backup.test.ts`
+  → 33 test geçti. `npm run typecheck`, `npm run lint`, `npm run export:web` geçti.
+- Düzeltmeden sonraki tam testin ilk çalışmasında, web derlemesi de sürerken kapsamlı
+  antrenman kombinasyonu testi 5 sn sınırına takıldı (356 geçti, 1 zaman aşımı).
+  Derleme/lint bittikten sonra aynı `npm test`, eşikler değiştirilmeden → **18 dosya / 357 test geçti**.
+- Web akışları GEÇTİ SAYILMADI: kurulu `/usr/bin/chromium` ile geçici test başlatıcısı
+  kullanılarak `npm run test:web` denendi; Chromium uygulamaya ulaşmadan
+  `socket() failed: Operation not permitted` ile kapandı. Yetki gevşetilmedi.
+- `e2e/web-recovery.mjs` sağlam yedek → bozuk mevcut tablo → bilinmeyen mevcut toplamlar
+  → açık onay → geri yükleme → yenilemede 10 XP akışıyla genişletildi.
+  `node --check e2e/web-recovery.mjs` geçti; bu yeni tarayıcı akışı ÇALIŞTIRILAMADI.
+- `git diff --check` temiz. Paketler ve EAS/native yapılandırması değiştirilmedi.
+
+### İletişim ve sonraki somut işler
+- Bağlı Browser aracı kullanılamadı; alternatif tarayıcı Claude giriş ekranına yönlendi.
+  Claude'a bu kontrolde mesaj GÖNDERİLMEDİ, çalışan işin durumu bilinmiyor.
+  Superpowers'ın mevcut kod oturumunda erişimi/kullanımı yeniden doğrulanmadı.
+- Claude'a iletilecek yeni görev: `codex/backup-recovery-preview` farkını incele; kabul
+  edilirse kendi dalına aktar ve altı `test:web` akışını çalıştır (özellikle genişletilen
+  `web-recovery.mjs`). Çalışan bir işi kesme ve önceki görevi yeniden gönderme.
+- `preview` profili statik olarak doğrulandı: internal + developmentClient=false + iOS
+  Release. Gerçek derleme/kurulum yok. Expo proje/hesap kimliği, kullanıcının paket kimliği
+  ve Apple imzası/cihaz kaydı hâlâ kullanıcı kararı gerektiriyor; değer uydurulmadı.
+- M5 TAMAM DEĞİL: SQLite göçü, arka plan/sonlandırma/saat, bildirim izin/teslim/iptal,
+  Türkçe ses/Durdur, Dosyalar/paylaşım ve uçak modunda soğuk açılış gerçek iPhone'da
+  sınanmalı. Web ve node:sqlite sonuçları bunların yerine geçmez. M4 eklenmedi.
 
 ## 2026-11-10 / Sayaç düzeltmesi + M3
 

@@ -90,6 +90,50 @@ try {
   await page.reload();
   await page.getByRole('button', { name: 'Başla' }).waitFor();
   check(true, 'and stays openable after a reload');
+
+  // A different failure: the store opens, but a malformed ledger cannot be
+  // summarized. Recovery must still offer a VALID backup for explicit restore.
+  await page.getByRole('button', { name: 'Başla' }).click();
+  await page.getByTestId('xp-total').waitFor();
+  await page.getByRole('button', { name: 'Kontrolü kaydet' }).click();
+  await page.getByText('+10 XP kaydedildi.').waitFor();
+  await tab(page, 'Ayarlar');
+  const goodDownload = page.waitForEvent('download');
+  await page.getByTestId('backup-export').click();
+  const goodPath = join(profileDir, 'valid-recovery.json');
+  await (await goodDownload).saveAs(goodPath);
+  await page.evaluate(() => new Promise((resolve, reject) => {
+    const open = indexedDB.open('avci', 1);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const tx = open.result.transaction('documents', 'readwrite');
+      const store = tx.objectStore('documents');
+      const get = store.get('main');
+      get.onsuccess = () => {
+        const stored = get.result;
+        stored.doc.ledger = null;
+        store.put(stored, 'main');
+      };
+      tx.oncomplete = () => (open.result.close(), resolve(null));
+      tx.onabort = () => (open.result.close(), reject(tx.error));
+    };
+  }));
+  await page.reload();
+  await tab(page, 'Ayarlar');
+  await page.getByTestId('storage-error').waitFor();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByTestId('backup-pick').click();
+  await (await chooser).setFiles(goodPath);
+  await page.getByTestId('backup-preview').waitFor();
+  check(await page.getByTestId('backup-current-unreadable').isVisible(), 'unreadable current totals have an explicit warning');
+  check(/şimdi bilinmiyor/.test(await page.getByTestId('backup-preview-xp').innerText()), 'unknown current XP is not shown as zero');
+  await page.getByTestId('backup-restore-confirm').click();
+  await page.getByText('Geri yükleme tamamlandı. Toplam 10 XP.', { exact: true }).waitFor();
+  await tab(page, 'Bugün');
+  await page.getByTestId('xp-total').getByText('Toplam 10 XP').waitFor();
+  await page.reload();
+  await page.getByTestId('xp-total').getByText('Toplam 10 XP').waitFor();
+  check(true, 'explicit restore from an unreadable store recovers 10 XP and survives reload');
   console.log('PASS web recovery');
 } catch (e) {
   console.error(e);

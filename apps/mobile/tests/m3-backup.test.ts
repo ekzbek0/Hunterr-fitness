@@ -147,7 +147,7 @@ describe.each(backends)('backup service ($name)', (backend) => {
     const preview = await backup.previewImport(out.json);
     if (!preview.ok) throw new Error('preview rejected');
     expect(preview.replacesAll).toBe(true);
-    expect(preview.current.totalXp).toBe(0);
+    expect(preview.current?.totalXp).toBe(0);
     expect(preview.backup.totalXp).toBe(110);
     expect(preview.backup.counts).toMatchObject({ sessions: 1, sets: 4, measurements: 1, weeklyReviews: 1 });
     expect((await dump(repo)).profile).toBeNull(); // preview writes nothing

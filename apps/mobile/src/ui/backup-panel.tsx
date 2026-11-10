@@ -133,12 +133,18 @@ export function BackupPanel({
               ? ` · kayıtlar ${formatDate(preview.backup.firstDate)} – ${formatDate(preview.backup.lastDate)}`
               : ''}
           </Text>
+          {!preview.current && (
+            <Text style={[T.body, { color: C.danger }]} testID="backup-current-unreadable">
+              Mevcut kayıtlar okunamadığı için şu anki kayıt sayıları ve XP bilinmiyor. Geri yükleme, okunamayanlar dahil
+              tüm mevcut kayıtların yerine bu yedeği yazacak. Onaylamadan önce yedekteki tarihleri ve sayıları kontrol et.
+            </Text>
+          )}
           <Text style={T.body} testID="backup-preview-xp">
-            Toplam XP: şimdi {preview.current.totalXp} → geri yüklemeden sonra {preview.backup.totalXp}
+            Toplam XP: şimdi {preview.current?.totalXp ?? 'bilinmiyor'} → geri yüklemeden sonra {preview.backup.totalXp}
           </Text>
           {COUNT_LABELS.map(([key, label]) => (
             <Text key={key} style={T.muted}>
-              {label}: şimdi {preview.current.counts[key]} → sonra {preview.backup.counts[key]}
+              {label}: şimdi {preview.current?.counts[key] ?? 'bilinmiyor'} → sonra {preview.backup.counts[key]}
             </Text>
           ))}
           <Text style={T.muted} testID="backup-preview-reminders">
