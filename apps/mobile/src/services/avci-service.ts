@@ -217,6 +217,23 @@ export interface FinishResult {
   reward: CompletionResult;
 }
 
+const samePrescription = (x: LoadPrescription, y: LoadPrescription) =>
+  x.load === y.load && x.unit === y.unit && x.convention === y.convention && x.sets === y.sets && x.repMin === y.repMin && x.repMax === y.repMax;
+
+/** A stored proposal's numbers equal those the deterministic rules produce now. */
+function sameNumbers(
+  fresh: { before: LoadPrescription; after: LoadPrescription; increment: ProgressionProposal['increment'] },
+  stored: Pick<ProgressionProposal, 'before' | 'after' | 'increment'>,
+): boolean {
+  return (
+    samePrescription(fresh.before, stored.before) &&
+    samePrescription(fresh.after, stored.after) &&
+    fresh.increment.key === stored.increment.key &&
+    fresh.increment.unit === stored.increment.unit &&
+    fresh.increment.value === stored.increment.value
+  );
+}
+
 export class AvciService {
   constructor(
     private readonly repo: AvciRepository,
@@ -783,7 +800,9 @@ export class AvciService {
         // Only today's readiness blocks: the evidence is unchanged, keep it pending (acceptance
         // re-validates anyway). A new week, other evidence or another plan version withdraws it.
         const readinessOnly = d !== undefined && isReadinessHold(d);
-        if (p.weeklyCycleId !== cycle.id || (!readinessOnly && increases.get(p.exerciseId) !== baseKey(p.evidenceKey))) {
+        // Numbers that the rules would not produce now (e.g. an edited, restored record) are never shown as pending.
+        const numbersDiffer = d !== undefined && d.kind === 'increase' && !sameNumbers(d, p);
+        if (p.weeklyCycleId !== cycle.id || numbersDiffer || (!readinessOnly && increases.get(p.exerciseId) !== baseKey(p.evidenceKey))) {
           await tx.updateProposal({ ...p, status: 'stale', decidedAt: now });
           p.status = 'stale';
         }
@@ -899,17 +918,7 @@ export class AvciService {
       if (!fresh || fresh.kind !== 'increase' || `${fresh.evidenceKey}@${plan.id}` !== baseKey(proposal.evidenceKey)) return stale();
       // The stored numbers are only applied when the deterministic rules produce exactly the same
       // ones now (a restored or otherwise altered record cannot carry its own target into the plan).
-      const same = (x: LoadPrescription, y: LoadPrescription) =>
-        x.load === y.load && x.unit === y.unit && x.convention === y.convention && x.sets === y.sets && x.repMin === y.repMin && x.repMax === y.repMax;
-      if (
-        !same(fresh.before, proposal.before) ||
-        !same(fresh.after, proposal.after) ||
-        fresh.increment.key !== proposal.increment.key ||
-        fresh.increment.unit !== proposal.increment.unit ||
-        fresh.increment.value !== proposal.increment.value
-      ) {
-        return stale();
-      }
+      if (!sameNumbers(fresh, proposal)) return stale();
       const b = proposal.before;
       const program: Program = structuredClone(plan.program);
       for (const d of program.days) {

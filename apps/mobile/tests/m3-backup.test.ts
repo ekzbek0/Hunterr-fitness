@@ -129,6 +129,25 @@ describe.each(backends)('backup service ($name)', (backend) => {
     backend.teardown();
   });
 
+  it('when the current records cannot be read, a valid backup can still be previewed and restored', async () => {
+    await seed(repo, clock);
+    const { json } = await backup.exportBackup();
+    const expected = norm(await dump(repo));
+    // Simulate unreadable current storage: the read used for the "now" column fails.
+    const broken: AvciRepository = {
+      ...repo,
+      kind: repo.kind,
+      transaction: (fn) => repo.transaction((tx) => fn({ ...tx, dumpAll: () => Promise.reject(new Error('malformed row')) } as StoreTx)),
+    };
+    const svc = new BackupService(broken, clock);
+    const preview = await svc.previewImport(json);
+    expect(preview.ok).toBe(true);
+    if (preview.ok) expect(preview.current).toBeNull();
+    // Restore itself goes through the real repository (its read-back must work after replaceAll).
+    expect((await backup.importBackup(json)).status).toBe('restored');
+    expect(norm(await dump(repo))).toBe(expected);
+  });
+
   it('round-trip: export -> delete all -> import restores every record; survives a restart', async () => {
     await seed(repo, clock);
     const before = await dump(repo);
