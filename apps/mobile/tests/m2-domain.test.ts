@@ -3,6 +3,9 @@
  * double-progression decision, rest timer and weekly cycle identity.
  * Thresholds tested here are product hypotheses (docs/TRAINING_RULES.md).
  */
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { cycleWeekEnd, cycleWeekStart, decideWeeklyCycle } from '@/domain/game/weekly-cycle';
@@ -296,5 +299,19 @@ describe('weekly cycle identity', () => {
     expect(decideWeeklyCycle(latest, '2026-11-15')).toEqual({ action: 'resume' });
     expect(decideWeeklyCycle(latest, '2026-11-16')).toEqual({ action: 'open', weekStart: '2026-11-16', closeLatest: true });
     expect(decideWeeklyCycle({ weekStart: '2026-11-16', closedAt: null }, '2026-11-15')).toEqual({ action: 'keep-latest' });
+  });
+});
+
+describe('XP/rank never reaches training rules (ACCEPTANCE 8)', () => {
+  it('no training-domain module imports XP, level, rank or cosmetics code', () => {
+    const dir = fileURLToPath(new URL('../src/domain/training/', import.meta.url));
+    const files = readdirSync(dir).filter((f) => f.endsWith('.ts'));
+    expect(files.length).toBeGreaterThanOrEqual(8);
+    for (const f of files) {
+      const src = readFileSync(dir + f, 'utf8');
+      const imports = [...src.matchAll(/from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
+      // Only sibling training modules; nothing from the game economy, services or UI.
+      expect(imports.filter((i) => !/^\.\/[a-z-]+$/.test(i)), f).toEqual([]);
+    }
   });
 });
