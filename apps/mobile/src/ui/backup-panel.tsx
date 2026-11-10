@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { COUNT_LABELS } from '@/domain/backup/summary';
-import { pickBackupFile, saveBackupFile } from '@/platform/backup-file';
+import { BackupFileError, pickBackupFile, saveBackupFile, TEMP_LEFT_NOTICE } from '@/platform/backup-file';
 import type { BackupService, ImportPreview } from '@/services/backup-service';
 import { Button, Card, T } from '@/ui/components';
 import { formatDate } from '@/ui/labels';
@@ -32,7 +32,8 @@ export function BackupPanel({
     try {
       await fn();
     } catch (e) {
-      setMsg({ text: e instanceof Error ? e.message : String(e), tone: 'error' });
+      const left = e instanceof BackupFileError && !e.tempCopyRemoved ? ` ${TEMP_LEFT_NOTICE}` : '';
+      setMsg({ text: `${e instanceof Error ? e.message : String(e)}${left}`, tone: 'error' });
     } finally {
       setBusy(false);
     }
@@ -41,14 +42,17 @@ export function BackupPanel({
   const doExport = () =>
     run(async () => {
       const out = await backup.exportBackup();
-      const how = await saveBackupFile(out.fileName, out.json);
-      setMsg({
-        text:
-          how === 'downloaded'
-            ? `Yedek indirildi: ${out.fileName} (${out.summary.totalXp} XP, ${out.summary.counts.sessions} antrenman).`
-            : `Yedek hazırlandı: ${out.fileName}. Paylaşım menüsünden bir konum seçtiysen oraya kaydedildi.`,
-        tone: 'ok',
-      });
+      const saved = await saveBackupFile(out.fileName, out.json);
+      const parts = [
+        saved.outcome === 'downloaded'
+          ? `Yedek indirildi: ${out.fileName} (${out.summary.totalXp} XP, ${out.summary.counts.sessions} antrenman).`
+          : `Yedek hazırlandı: ${out.fileName}. Paylaşım menüsünden bir konum seçtiysen oraya kaydedildi.`,
+      ];
+      if (out.issues.length > 0) {
+        parts.push(`Uyarı: mevcut kayıtlarda ${out.issues.length} tutarsızlık var; bu dosya geri yüklemede reddedilebilir (${out.issues[0].message})`);
+      }
+      if (!saved.tempCopyRemoved) parts.push(TEMP_LEFT_NOTICE);
+      setMsg({ text: parts.join(' '), tone: out.issues.length > 0 || !saved.tempCopyRemoved ? 'error' : 'ok' });
     });
 
   const doPick = () =>
@@ -56,7 +60,8 @@ export function BackupPanel({
       setMsg(null);
       const file = await pickBackupFile();
       if (!file) return;
-      setPicked({ ...file, preview: await backup.previewImport(file.text) });
+      if (!file.tempCopyRemoved) setMsg({ text: TEMP_LEFT_NOTICE, tone: 'error' });
+      setPicked({ name: file.name, text: file.text, preview: await backup.previewImport(file.text) });
     });
 
   const doRestore = () =>
@@ -140,8 +145,8 @@ export function BackupPanel({
 
       <Text style={T.label}>Tüm yerel verileri sil</Text>
       <Text style={T.muted}>
-        Bu cihazdaki tüm AVCI kayıtlarını ve planlı hatırlatıcıları siler. Geri alınamaz; gizli kopya tutulmaz ve hiçbir şey
-        kendiliğinden geri yüklenmez. Önce yedek almak isteyebilirsin.
+        Bu cihazdaki tüm AVCI kayıtlarını ve planlı hatırlatıcıları siler. Geri alınamaz; hiçbir şey kendiliğinden geri
+        yüklenmez. Daha önce dışa aktardığın yedek dosyalarına dokunulmaz; onları sen silersin. Önce yedek almak isteyebilirsin.
       </Text>
       {confirmDelete ? (
         <View style={T.row}>

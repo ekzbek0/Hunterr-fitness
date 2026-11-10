@@ -11,7 +11,7 @@
  */
 import type { BackupData, MeasurementType, MeasurementUnit } from '@/data/types';
 import { awardedXp, isMultiplierHalves, XP } from '@/domain/game/economy';
-import { validateHabitKeys } from '@/domain/game/quests';
+import { SLOT_KEYS, validateHabitKeys } from '@/domain/game/quests';
 import { isValidTimeZone } from '@/domain/game/task-day';
 import { cycleWeekEnd, cycleWeekStart, WEEKLY_REVIEW_SLOT } from '@/domain/game/weekly-cycle';
 import { MEASUREMENT_RANGES, UNITS_FOR_TYPE } from '@/domain/progress/measurements';
@@ -22,6 +22,7 @@ import { LIMITS, ProgramError, validateProgram, type Program } from '@/domain/tr
 import { validateIncrement } from '@/domain/training/progression';
 import { validateCheckin, type CheckinInput } from '@/domain/training/readiness';
 import { REST_LIMITS } from '@/domain/training/rest';
+import { scheduleSlotId, weekStartOf } from '@/domain/training/schedule';
 import { validateSet, type SetInput } from '@/domain/training/workout';
 
 export type BackupIssueCode =
@@ -671,6 +672,69 @@ function checkIntegrity(out: IssueList, d: BackupData) {
       if (cycle && !reviews.has(cycle.id)) ref(`${p}.scopeId`, 'haftalık değerlendirme yapılmamış ama XP verilmiş');
     }
   });
+  // ---- Both directions: a record that implies another one must come with it. ----
+  // Nothing is repaired or guessed here: an inconsistent file is rejected as a whole.
+  if (profileId === null) {
+    for (const [name, rows] of [['taskDays', d.taskDays], ['plans', d.plans], ['weeklyCycles', d.weeklyCycles], ['sessions', d.sessions]] as const) {
+      if (rows.length > 0) ref(name, 'profil yokken kayıt içeriyor');
+    }
+  }
+  const dayLedger = new Set(d.ledger.filter((e) => e.scopeKind === 'day').map((e) => `${e.scopeId}|${e.slotKey}`));
+  const weekLedger = new Set(d.ledger.filter((e) => e.scopeKind === 'week').map((e) => e.scopeId));
+  const checkinDays = new Set(d.checkins.map((c) => c.taskDayId));
+  const REQUIRED_SLOTS: readonly [string, string, number][] = [
+    [SLOT_KEYS.checkin, 'checkin', XP.checkin],
+    [SLOT_KEYS.core, 'core', XP.dailyCore],
+    [SLOT_KEYS.habit1, 'habit', XP.habit],
+    [SLOT_KEYS.habit2, 'habit', XP.habit],
+  ];
+  d.taskDays.forEach((day, i) => {
+    for (const [key, kind, baseXp] of REQUIRED_SLOTS) {
+      const slot = slots.get(`${day.id}|${key}`);
+      if (!slot) {
+        ref(`taskDays[${i}]`, `görev gününün zorunlu "${key}" görevi eksik`);
+        continue;
+      }
+      if (slot.kind !== kind) ref(`taskDays[${i}]`, `"${key}" görevinin türü "${kind}" olmalı`);
+      if (slot.baseXp !== baseXp) ref(`taskDays[${i}]`, `"${key}" görevinin taban XP değeri ${baseXp} olmalı`);
+    }
+  });
+  d.slots.forEach((s, i) => {
+    const p = `slots[${i}]`;
+    if (!REQUIRED_SLOTS.some(([key]) => key === s.slotKey)) ref(`${p}.slotKey`, 'tanınmayan görev anahtarı');
+    if (s.status === 'completed' && !dayLedger.has(`${s.taskDayId}|${s.slotKey}`)) {
+      ref(p, 'görev tamamlanmış ama karşılık gelen XP kaydı yok');
+    }
+    if (s.slotKey === SLOT_KEYS.checkin && days.has(s.taskDayId) && (s.status === 'completed') !== checkinDays.has(s.taskDayId)) {
+      ref(p, 'günlük kontrol görevi ile günlük kontrol kaydı uyuşmuyor');
+    }
+    if (s.slotKey === SLOT_KEYS.core) {
+      if (s.status === 'completed' && s.resolution === null) ref(`${p}.resolution`, 'tamamlanan ana görevin çözüm türü olmalı');
+      const linked = s.workoutSessionId === null ? undefined : sessions.get(s.workoutSessionId);
+      if (linked) {
+        if (linked.taskDayId !== s.taskDayId) ref(`${p}.workoutSessionId`, 'başka bir görev gününün antrenmanına bağlı');
+        if (linked.status !== 'finished') ref(`${p}.workoutSessionId`, 'bitmemiş bir antrenmana bağlı');
+        if (s.resolution !== 'training') ref(`${p}.resolution`, 'antrenmana bağlı ana görevin çözüm türü antrenman olmalı');
+      }
+    }
+  });
+  d.weeklyReviews.forEach((r, i) => {
+    if (cycles.has(r.weeklyCycleId) && !weekLedger.has(r.weeklyCycleId)) {
+      ref(`weeklyReviews[${i}]`, 'haftalık değerlendirme yapılmış ama karşılık gelen XP kaydı yok');
+    }
+  });
+  const coreSessions = new Map<string, number>();
+  d.slots.forEach((s) => {
+    if (s.workoutSessionId !== null) coreSessions.set(s.workoutSessionId, (coreSessions.get(s.workoutSessionId) ?? 0) + 1);
+  });
+  for (const [id, n] of coreSessions) if (n > 1) ref('slots', `aynı antrenman (${id}) birden fazla göreve bağlı`);
+  d.sessions.forEach((s, i) => {
+    const day = days.get(s.taskDayId);
+    if (day && s.scheduleSlotId !== null && s.scheduleSlotId !== scheduleSlotId(weekStartOf(day.localDate), s.programDayId)) {
+      ref(`sessions[${i}].scheduleSlotId`, 'antrenmanın görev gününün haftasına veya program gününe ait değil');
+    }
+  });
+
   d.plans.forEach((pl, i) => {
     if (pl.parentId !== null) {
       const parent = plans.get(pl.parentId);

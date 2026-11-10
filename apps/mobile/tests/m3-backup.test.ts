@@ -166,6 +166,62 @@ describe.each(backends)('backup service ($name)', (backend) => {
     }
   });
 
+  it('REGRESSION: quests and XP must agree in both directions; inconsistent files are rejected, nothing is repaired', async () => {
+    const service = await seed(repo, clock);
+    const { json } = await backup.exportBackup();
+    await repo.transaction((tx) => tx.putSettings({ speechEnabled: true, reminders: { enabled: false, times: [] } }));
+    const before = norm(await dump(repo));
+    const OTHER_DAY = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const cases: Record<string, (d: BackupData) => void> = {
+      'task day with an empty slots list': (d) => void (d.slots = []),
+      'task day missing one required slot': (d) => void (d.slots = d.slots.filter((x) => x.slotKey !== 'habit-2')),
+      'unknown extra slot': (d) => void d.slots.push({ ...d.slots.find((x) => x.slotKey === 'habit-1')!, slotKey: 'habit-3' }),
+      'slot kind does not match its key': (d) => void (d.slots.find((x) => x.slotKey === 'habit-1')!.kind = 'core'),
+      'completed quest without its XP entry': (d) => void (d.ledger = d.ledger.filter((e) => e.slotKey !== 'core')),
+      'completed check-in without its XP entry': (d) => void (d.ledger = d.ledger.filter((e) => e.slotKey !== 'checkin')),
+      'XP entry for an open quest': (d) => {
+        const core = d.slots.find((x) => x.slotKey === 'core')!;
+        Object.assign(core, { status: 'open', completedAt: null, resolution: null, workoutSessionId: null });
+      },
+      'weekly review without the weekly reward': (d) => void (d.ledger = d.ledger.filter((e) => e.scopeKind !== 'week')),
+      'weekly reward without a weekly review': (d) => void (d.weeklyReviews = []),
+      'check-in record without a completed check-in quest': (d) => {
+        const c = d.slots.find((x) => x.slotKey === 'checkin')!;
+        Object.assign(c, { status: 'open', completedAt: null });
+        d.ledger = d.ledger.filter((e) => e.slotKey !== 'checkin');
+      },
+      'completed check-in quest without a check-in record': (d) => void (d.checkins = []),
+      'core quest linked to a workout of another task day': (d) => {
+        const day = d.taskDays[0];
+        d.taskDays.push({ ...day, id: OTHER_DAY, sequence: day.sequence + 1, localDate: '2026-11-10' });
+        for (const sl of d.slots.filter((x) => x.taskDayId === day.id)) {
+          d.slots.push({ ...sl, taskDayId: OTHER_DAY, status: 'open', completedAt: null, resolution: null, workoutSessionId: null });
+        }
+        d.sessions[0].taskDayId = OTHER_DAY;
+      },
+      'core quest linked to an unfinished workout': (d) => void Object.assign(d.sessions[0], { status: 'abandoned' }),
+      'workout whose schedule slot belongs to another week': (d) => void (d.sessions[0].scheduleSlotId = `2026-11-02:${d.sessions[0].programDayId}`),
+      'records without a profile': (d) => {
+        d.profile = null;
+        d.trainingProfile = null;
+        d.ledger = [];
+      },
+    };
+    for (const [name, edit] of Object.entries(cases)) {
+      const text = tamper(json, edit); // checksum recomputed: only the consistency rules can catch it
+      const preview = await backup.previewImport(text);
+      expect(preview.ok, name).toBe(false);
+      if (!preview.ok) expect(preview.errors.some((e) => e.code === 'reference' || e.code === 'value'), name).toBe(true);
+      expect((await backup.importBackup(text)).status, name).toBe('rejected');
+      expect(norm(await dump(repo)), name).toBe(before);
+    }
+    // The untouched file is still accepted, and XP/quests are intact afterwards.
+    expect((await backup.importBackup(json)).status).toBe('restored');
+    const today = await service.loadToday();
+    expect(today.progress.totalXp).toBe(110);
+    expect(today.slots.map((x) => x.slotKey).sort()).toEqual(['checkin', 'core', 'habit-1', 'habit-2']);
+  });
+
   it('a failure while writing rolls the whole restore back', async () => {
     await seed(repo, clock);
     const { json } = await backup.exportBackup();

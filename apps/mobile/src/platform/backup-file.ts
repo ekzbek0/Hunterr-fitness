@@ -1,9 +1,10 @@
 /**
  * Native (iOS/Android) backup file handling. Saving writes the JSON to the
  * app cache, opens the system share sheet (Files, AirDrop, ...) and removes
- * the cache copy afterwards so no hidden copy stays behind. Picking uses the
- * system document picker and reads the picked copy as text.
- * The web build uses backup-file.web.ts instead (Metro platform extension).
+ * the cache copy afterwards. Picking uses the system document picker, which
+ * copies the chosen file into the app cache; that copy is removed after it is
+ * read or rejected. The lifecycle (including every failure path) lives in
+ * backup-file-core.ts. The web build uses backup-file.web.ts instead.
  * NOT verified on a real iPhone yet.
  */
 import * as DocumentPicker from 'expo-document-picker';
@@ -12,48 +13,54 @@ import * as Sharing from 'expo-sharing';
 
 import { MAX_BACKUP_BYTES } from '@/domain/backup/format';
 
-export type SaveOutcome = 'shared' | 'downloaded' | 'cancelled';
+import { pickAndRead, saveThroughShare, type PickResult, type SaveResult, type TempFile } from './backup-file-core';
 
-function removeQuietly(file: File) {
-  try {
-    if (file.exists) file.delete();
-  } catch {
-    // Cache files are cleared by the OS eventually; nothing else to do.
-  }
+export { BackupFileError, TEMP_LEFT_NOTICE, type PickResult, type SaveResult } from './backup-file-core';
+
+/** Only files inside this app's cache directory are ours to delete. */
+function temp(file: File): TempFile {
+  return {
+    uri: file.uri,
+    owned: file.uri.startsWith(Paths.cache.uri),
+    write: async (text) => file.write(text),
+    text: () => file.text(),
+    remove: () => {
+      if (file.exists) file.delete();
+    },
+  };
 }
 
-export async function saveBackupFile(fileName: string, json: string): Promise<SaveOutcome> {
-  if (!(await Sharing.isAvailableAsync())) {
-    throw new Error('Bu cihazda paylaşım menüsü kullanılamıyor; yedek kaydedilemedi.');
-  }
-  const file = new File(Paths.cache, fileName);
-  try {
-    removeQuietly(file);
-    file.create();
-    await file.write(json);
-    // Resolves when the share sheet is dismissed; iOS does not report whether a target was chosen.
-    await Sharing.shareAsync(file.uri, { mimeType: 'application/json', UTI: 'public.json', dialogTitle: 'AVCI yedeğini kaydet' });
-    return 'shared';
-  } finally {
-    removeQuietly(file);
-  }
+export function saveBackupFile(fileName: string, json: string): Promise<SaveResult> {
+  return saveThroughShare(
+    {
+      shareAvailable: () => Sharing.isAvailableAsync(),
+      createTemp: (name) => {
+        const file = new File(Paths.cache, name);
+        if (file.exists) file.delete();
+        file.create();
+        return temp(file);
+      },
+      share: (uri) => Sharing.shareAsync(uri, { mimeType: 'application/json', UTI: 'public.json', dialogTitle: 'AVCI yedeğini kaydet' }),
+    },
+    fileName,
+    json,
+  );
 }
 
-export async function pickBackupFile(): Promise<{ name: string; text: string } | null> {
-  const result = await DocumentPicker.getDocumentAsync({
-    type: ['application/json', 'public.json', 'text/plain'],
-    copyToCacheDirectory: true,
-    multiple: false,
-  });
-  if (result.canceled || !result.assets || result.assets.length === 0) return null;
-  const asset = result.assets[0];
-  if (typeof asset.size === 'number' && asset.size > MAX_BACKUP_BYTES) {
-    throw new Error('Dosya çok büyük; bu bir AVCI yedeği değil gibi görünüyor.');
-  }
-  const file = new File(asset.uri);
-  try {
-    return { name: asset.name, text: await file.text() };
-  } finally {
-    removeQuietly(file);
-  }
+export function pickBackupFile(): Promise<PickResult | null> {
+  return pickAndRead(
+    {
+      pick: async () => {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: ['application/json', 'public.json', 'text/plain'],
+          copyToCacheDirectory: true,
+          multiple: false,
+        });
+        if (result.canceled || !result.assets || result.assets.length === 0) return null;
+        const asset = result.assets[0];
+        return { name: asset.name, size: typeof asset.size === 'number' ? asset.size : null, file: temp(new File(asset.uri)) };
+      },
+    },
+    MAX_BACKUP_BYTES,
+  );
 }

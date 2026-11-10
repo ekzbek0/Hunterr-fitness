@@ -4,9 +4,12 @@
  */
 import { MAX_BACKUP_BYTES } from '@/domain/backup/format';
 
-export type SaveOutcome = 'shared' | 'downloaded' | 'cancelled';
+import { BackupFileError, type PickResult, type SaveResult } from './backup-file-core';
 
-export async function saveBackupFile(fileName: string, json: string): Promise<SaveOutcome> {
+export { BackupFileError, TEMP_LEFT_NOTICE, type PickResult, type SaveResult } from './backup-file-core';
+
+// The browser keeps no app-owned file copy: the download goes where the user's browser saves it.
+export async function saveBackupFile(fileName: string, json: string): Promise<SaveResult> {
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;
@@ -16,10 +19,10 @@ export async function saveBackupFile(fileName: string, json: string): Promise<Sa
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  return 'downloaded';
+  return { outcome: 'downloaded', tempCopyRemoved: true };
 }
 
-export function pickBackupFile(): Promise<{ name: string; text: string } | null> {
+export function pickBackupFile(): Promise<PickResult | null> {
   return new Promise((resolve, reject) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -35,11 +38,11 @@ export function pickBackupFile(): Promise<{ name: string; text: string } | null>
       const file = input.files?.[0];
       if (!file) return done(() => resolve(null));
       if (file.size > MAX_BACKUP_BYTES) {
-        return done(() => reject(new Error('Dosya çok büyük; bu bir AVCI yedeği değil gibi görünüyor.')));
+        return done(() => reject(new BackupFileError('Dosya çok büyük; bu bir AVCI yedeği değil gibi görünüyor.', true)));
       }
       file.text().then(
-        (text) => done(() => resolve({ name: file.name, text })),
-        () => done(() => reject(new Error('Dosya okunamadı.'))),
+        (text) => done(() => resolve({ name: file.name, text, tempCopyRemoved: true })),
+        () => done(() => reject(new BackupFileError('Dosya okunamadı.', true))),
       );
     });
     document.body.appendChild(input);
