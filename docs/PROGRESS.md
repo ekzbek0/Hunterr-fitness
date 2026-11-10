@@ -2,6 +2,29 @@
 
 ## Status
 
+## 2026-11-10 / Kontrol engelinde doğrulanmamış yük önizlemesi
+
+- `33043fb` için temiz GitHub Actions işi `42826440910` tamamlandı; ham günlüklerden
+  362 test, tür/lint, web export ve altı PASS akışı doğrulandı. Birleştirme inceleyeni ayrıca
+  75/75 odaklı test ve kurtarma betiğinin sözdizimini çalıştırdı; dar bütünleştirmede kusur yok.
+- Sonraki bağımsız sınır incelemesinde P2 bulundu: geri yüklenmiş önerinin `after.load=500`
+  değeri, yeni gün kontrolü yokken tekrar hesaplanamıyor; öneri `pending` kaldığından
+  arayüz rakamı ve olumlu gerekçeyi gösterebiliyordu. Kabul yolu `readiness-blocked` ile
+  reddediyor, kontrol sonrası `sameNumbers` uyuşmazlığı yakalıyordu; plan değişikliği açığı yok.
+- İki gerçek depoda geçici tanısal test gerçekten çalıştırıldı (2/2): sağlaması yeniden
+  hesaplanmış yedeğin kabulü → ertesi gün kontrolsüz değerlendirme → bekleyen 500 yükü →
+  kabulün reddi. Tanısal ekleme çalıştırma sonunda geri alındı, ürün testine geçirilmedi.
+  Ayrı inceleyen de kaynakta aynı sınırı doğruladı.
+- Dar arayüz düzeltmesi: bugün yeniden doğrulanamayan bekleyen öneri yük/gerekçe göstermiyor;
+  mevcut programın değişmediğini açıklıyor, kabul kapalı ve reddetme yolu korunuyor.
+  Kontrol düzelince mevcut kurallar tekrar çalışır; oyun/XP veya yük reçetesi değiştirilmedi.
+- `web-m2.mjs` sentetik bozuk öneri, kontrolsüz yeni gün, gizlenen yük/kabul engeli ve
+  kontrol sonrası gerçek 62,5 kg önerisinin onayını sınayacak şekilde genişletildi.
+- Bu son UI ağacında 362/362 test, typecheck, lint, web export ve `node --check` geçti.
+  Yeni tarayıcı regresyonu CI'da ayrıca doğrulanmalıdır; önceki yeşil iş bu UI değişikliğine
+  kanıt değildir. iPhone testleri yapılmadı; M5 tamam değil.
+
+
 ## 2026-11-10 / Güncel Claude dalıyla bağımsız bütünleştirme
 
 - GitHub dal listesi ve uzak ref'ler doğrulandı: en yeni Claude dalı

@@ -231,3 +231,11 @@ task-day travel policy, persistence adapter, versions, and sync conflict policy.
   Dayanak: [GitHub workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
   Gerçek sonuçlar ve test edilen commit PROGRESS.md'de kaydedilir; bu web kanıtıdır,
   native kabul kanıtı değildir.
+
+- 2026-11-10 (engellenen öneri görünümü): Bugünkü kontrol yük artışını engelliyorsa
+  bekleyen önerinin saklanan rakam/gerekçesi güvenilir güncel öneri olarak gösterilmez.
+  Kabul zaten servis ve UI'da kapalıdır; şimdi sayılar da yeniden doğrulama yapılana kadar
+  gizlenir. Bekleyen denetim kaydı silinmez veya bayat diye uydurulmaz; kontrol sonrası
+  mevcut belirleyici kurallar öneriyi yeniden değerlendirir. Gerekçe: değiştirilmiş yedekteki
+  hedef readiness engelinde tekrar hesaplanamıyor, ama arayüzde öneri gibi görünüyordu.
+  İki depo tanısal tekrar ve ayrı kaynak incelemesi bulguyu doğruladı; web regresyonu eklendi.
