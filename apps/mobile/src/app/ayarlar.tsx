@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { Profile } from '@/data/types';
 import { Text, View } from 'react-native';
 
 import { MULTIPLIER_HALVES, multiplierLabel, type MultiplierHalves } from '@/domain/game/economy';
 import { HABIT_CATALOG } from '@/domain/game/quests';
+import { BackupService } from '@/services/backup-service';
 import { useAvci } from '@/ui/avci-context';
+import { BackupPanel } from '@/ui/backup-panel';
 import { ReminderSettings, SpeechSettings } from '@/ui/settings/m3-settings';
 import { Button, Card, Chip, Screen, StorageGate, T } from '@/ui/components';
 import { C } from '@/ui/theme';
@@ -22,20 +24,25 @@ function Settings() {
   const { snapshot } = useAvci();
   const [saved, setSaved] = useState<string | null>(null);
   const profile = snapshot?.profile;
-  if (!profile) {
-    // Restore must work on a fresh install, so the data section is always reachable.
-    return (
-      <Screen title="Ayarlar">
+  // One stable tree: the data section keeps its state (and messages) when the profile
+  // appears or disappears (restore on a fresh install, delete all).
+  return (
+    <Screen title="Ayarlar">
+      {profile ? (
+        // Re-key on save so the form re-initialises from the stored profile.
+        <SettingsForm key={profile.confirmedAt} profile={profile} saved={saved} setSaved={setSaved} />
+      ) : (
         <Card>
-          <Text style={T.body}>Oyun ayarları profilini oluşturduktan sonra açılır. Bir yedeğin varsa aşağıdan geri yükleyebilirsin.</Text>
+          <Text style={T.body}>
+            Oyun ayarları profilini oluşturduktan sonra açılır. Bir yedeğin varsa aşağıdan geri yükleyebilirsin.
+          </Text>
         </Card>
-        <SpeechSettings />
-        <DataSection />
-      </Screen>
-    );
-  }
-  // Re-key on save so the form re-initialises from the stored profile.
-  return <SettingsForm key={profile.confirmedAt} profile={profile} saved={saved} setSaved={setSaved} />;
+      )}
+      <SpeechSettings />
+      {profile && <ReminderSettings />}
+      <DataSection timezone={profile ? (snapshot?.today?.timezone ?? profile.timezone) : undefined} />
+    </Screen>
+  );
 }
 
 function SettingsForm({
@@ -47,7 +54,7 @@ function SettingsForm({
   saved: string | null;
   setSaved: (msg: string | null) => void;
 }) {
-  const { snapshot, act } = useAvci();
+  const { act } = useAvci();
   const [mult, setMult] = useState<MultiplierHalves>(profile.multiplierHalves);
   const [habits, setHabits] = useState<string[]>(profile.habitKeys);
   const toggle = (key: string) =>
@@ -55,7 +62,7 @@ function SettingsForm({
   const dirty = mult !== profile.multiplierHalves || habits.join() !== profile.habitKeys.join();
 
   return (
-    <Screen title="Ayarlar">
+    <>
       <Card>
         <Text style={T.h3}>XP çarpanı</Text>
         <View style={T.row} accessibilityRole="radiogroup">
@@ -86,21 +93,23 @@ function SettingsForm({
         }}
       />
       {saved && <Text style={[T.body, { color: C.success }]}>{saved}</Text>}
-      <SpeechSettings />
-      <ReminderSettings />
-      <DataSection timezone={snapshot?.today?.timezone ?? profile.timezone} />
-    </Screen>
+    </>
   );
 }
 
 function DataSection({ timezone }: { timezone?: string }) {
-  const { snapshot } = useAvci();
+  const { snapshot, repo, reminders, refresh } = useAvci();
+  const backup = useMemo(() => (repo ? new BackupService(repo) : null), [repo]);
   return (
-    <Card>
-      <Text style={T.h3}>Veri</Text>
-      <Text style={T.muted}>Depolama: {snapshot?.storageKind}</Text>
-      {timezone && <Text style={T.muted}>Gün sınırı için saat dilimi: {timezone}</Text>}
-      <Text style={T.muted}>Yedekleme ve geri yükleme M3 kapsamında ekleniyor.</Text>
-    </Card>
+    <>
+      <Card>
+        <Text style={T.h3}>Veri</Text>
+        <Text style={T.muted}>Depolama: {snapshot?.storageKind}</Text>
+        {timezone && <Text style={T.muted}>Gün sınırı için saat dilimi: {timezone}</Text>}
+      </Card>
+      {backup && (
+        <BackupPanel backup={backup} afterChange={refresh} cancelReminders={() => reminders?.cancelAll() ?? Promise.resolve()} />
+      )}
+    </>
   );
 }

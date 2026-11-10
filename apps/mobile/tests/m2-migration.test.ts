@@ -79,6 +79,10 @@ describe('SQLite v2 (M1) -> v3 (M2)', () => {
     const sets = await repo.transaction((tx) => tx.listSets(SES));
     expect(sets.map((s) => [s.id, s.load, s.unit, s.loadConvention, s.rir])).toEqual([['s1', 60, 'kg', 'total', 2]]);
     expect((await repo.transaction((tx) => tx.getSession(SES)))!.restStartedAt).toBeNull();
+    // M3 (migration 4): new rest columns default safely, new tables start empty, settings default.
+    expect(await repo.transaction((tx) => tx.getSession(SES))).toMatchObject({ restLastSeenAt: null, restUncertain: false });
+    expect(await repo.transaction((tx) => tx.listMeasurements())).toEqual([]);
+    expect(await repo.transaction((tx) => tx.getSettings())).toEqual({ speechEnabled: true, reminders: { enabled: false, times: [] } });
     expect((await service.loadToday()).progress.totalXp).toBe(70);
     const review = await service.loadWeeklyReview();
     if (review.status !== 'ok') throw new Error(review.reason);
@@ -142,5 +146,7 @@ describe('IndexedDB document v2 (M1) -> v3 (M2)', () => {
     expect(stored!.doc.sets).toHaveLength(1);
     expect(stored!.doc.sessions[0]).toMatchObject({ restStartedAt: null, restDurationS: null, restUncertain: false });
     expect(stored!.doc.weeklyCycles).toHaveLength(1);
+    expect(stored!.doc.measurements).toEqual([]);
+    expect(stored!.doc.settings).toEqual({ speechEnabled: true, reminders: { enabled: false, times: [] } });
   });
 });

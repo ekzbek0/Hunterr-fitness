@@ -1,9 +1,98 @@
 # Current progress
 
 ## Status
-M0, M1 ve M2 (iki M1 düzeltmesi, haftalık değerlendirme, deterministik yük önerileri,
-dinlenme sayacı, seviyeye göre avatar/rozet) web üzerinde çalışıyor ve test edildi.
-Native (iPhone) davranışı henüz gerçek cihazda SINANMADI.
+M0–M3 web üzerinde çalışıyor ve test edildi (M3: dinlenme sayacı saat düzeltmesi, Gelişim
+sekmesi, yedekleme/geri yükleme/silme, sesli okuma, yerel hatırlatıcılar, EAS hazırlığı).
+Native (iPhone) davranışı — SQLite migration 4, bildirimler, sesli okuma, paylaşım/dosya
+seçici dahil — gerçek cihazda SINANMADI.
+
+## 2026-11-10 / Sayaç düzeltmesi + M3
+
+Dal: `claude/project-thread-odi8ww`. main'e birleştirilmedi. Yayın, mağaza gönderimi, ücretli
+hizmet yok.
+
+### Oturum ve ajanlar (gerçekte olan)
+- İşin başında Agent listesinde avci-* türü yoktu; rolleri tanım dosyalarını okutarak genel
+  amaçlı iki alt ajanla uyguladım, her dosyanın tek yazarı vardı:
+  - avci-mobile rolü: `src/domain/progress/**`, `src/services/progress-service.ts`,
+    `src/app/gelisim.tsx`, `src/ui/progress/**`, `_layout.tsx` (yalnız sekme),
+    `tests/m3-progress.test.ts`. Tamamladı.
+  - avci-data rolü: `src/domain/backup/**`, `src/services/backup-service.ts`,
+    `src/platform/backup-file.ts` yazdı; kullanım sınırı nedeniyle YARIDA KESİLDİ.
+    `backup-file.web.ts`, `src/ui/backup-panel.tsx` ve `tests/m3-backup.test.ts` ana oturumca yazıldı.
+  - Geri kalan her şey (sayaç, depo/göç, hatırlatıcılar, sesli okuma, Ayarlar, EAS, e2e, belgeler)
+    ana oturum. Oturum yeniden başladıktan sonra avci-* türleri yüklendi ama kullanılmadı.
+- Ayrı bir bağımsız inceleme (avci-qa/avci-privacy) bu dilimde ÇALIŞTIRILMADI.
+
+### Sayaç düzeltmesi
+90 sn'lik sayaçta 60 sn geçince 30 sn kalıyor; saat 30 sn geri alınınca eskiden 60 sn
+gösteriyordu. Artık `restView` (eski `restRemainingSeconds` kaldırıldı) saklanan en yüksek
+saat okumasına göre geri adımı fark eder ve sayaç kalıcı "belirsiz" durumuna geçer: süre
+uzamaz, kalan süre uydurulmaz, yeniden açılışta aynı görünür, kullanıcı yeniden başlatır.
+Ayrıntı ve kalan risk: DECISIONS.md.
+
+### M3 davranışı
+- **Gelişim sekmesi**: hareket başına tarihli grafik; seri anahtarı hareket + birim (kg/lb) +
+  yük türü (toplam/dambıl başına/…), dönüşüm ve birleştirme yok; değer = en yüksek çalışma
+  seti yükü (lastik/yüksüz seride en çok tekrar), tablo karşılığı var, 1RM tahmini yok.
+  Isınma setleri çalışma serisine girmez, ayrı sayılır. Geçmiş: biten antrenmanlar, açılır set
+  listesi (yarıda bırakılanlar gösterilmez). Süreklilik: son 28 gün, antrenman ve planlı
+  toparlanma eşit ağırlıkta olumlu; boş günler nötr, borç/ceza dili yok. Ölçümler: isteğe bağlı
+  tarihli vücut ağırlığı (kg/lb) ve çevre (cm/inç); silme mezar taşıyla; fotoğraf yok, görünüş
+  puanı/BMI yargısı yok.
+- **Yedekleme**: `avci-backup` sürüm 1 zarfı (sha256 sağlama, şema bilgisi) tüm M0–M3
+  kayıtlarını içerir. İçe aktarmada yazmadan önce tam doğrulama (biçim, sürüm, sağlama, boyut,
+  her kayıt, değer aralıkları, benzersiz kimlikler, XP defter anahtarı ve tutarı, ilişkiler);
+  etki önizlemesi (şimdi → sonra sayılar ve XP) ve açık onay. Geri yükleme birleştirme değil
+  tam değiştirmedir, tek işlemde yazılır ve işlem içinde geri okunarak doğrulanır; bu yüzden
+  aynı dosyayı tekrar yüklemek XP'yi çoğaltmaz. Bozuk/desteklenmeyen dosya hiçbir şeyi
+  değiştirmez. Dosya bağdaştırıcıları ayrı: web (indirme + dosya girişi), native (expo-file-system
+  + paylaşım menüsü + belge seçici). Profil yokken de geri yükleme yapılabilir.
+- **Tüm yerel verileri sil**: iki adımlı onay; önce hatırlatıcılar iptal edilir (iptal
+  başarısızsa hiçbir şey silinmez), sonra tüm tablolar tek işlemde boşaltılır; gizli kopya ve
+  otomatik geri yükleme yok.
+- **Sesli okuma**: Bugün'de "Görevleri sesli oku", antrenmanda "Nasıl yapılır" altında "Sesli
+  oku"; "Durdur" hemen keser; Ayarlar'dan kapatılır; mikrofon yok; Türkçe ses yoksa metin kalır
+  ve nedeni yazılır.
+- **Hatırlatıcılar**: Ayarlar'da en fazla 3 saat; plana göre içerik; her değişiklikte çiftsiz
+  uzlaştırma; izin reddinde uygulama çalışır ve durum dürüstçe yazılır; web "desteklenmiyor" der.
+- **Kalıcılık**: SQLite migration 4 (yalnız ekleyici: `workout_session.rest_last_seen_at`,
+  `rest_uncertain`, `measurement`, `app_setting`), IndexedDB belge v3→v4. M0–M2 kayıtları korunur.
+- **iPhone hazırlığı**: `expo-dev-client`, `eas.json` (development / development-simulator /
+  preview), `expo-notifications` eklentisi yalnız yerel bildirim. Hesap, proje kimliği, paket
+  kimliği ve imza YOK; kalan adımlar `docs/SETUP.md` içinde.
+
+### Çalıştırılan komutlar ve gerçek sonuçlar (apps/mobile içinde)
+- `npx tsc --noEmit` → hata yok. `npx expo lint` → hata/uyarı yok.
+- `npx vitest run` → 15 dosya, 314 test geçti. M3: `m3-backup` 14 (gidiş-dönüş, depolar arası
+  gidiş-dönüş, 13 tür bozuk/desteklenmeyen dosyada veri değişmiyor, yazma hatasında geri alma,
+  tekrar içe aktarmada XP 110 kalıyor, tüm verileri silme ve iptal sırası), `m3-reminders` 15
+  (sahte zamanlayıcıyla: çift yok, saat/taşıma/gün değişimi, izin reddi, desteklenmeyen ortam),
+  `m3-progress` 19, `m3-speech` 3, sayaç regresyonu `m2-domain`/`m2-service` (iki depo).
+- `npx expo export --platform web` → `dist/` üretildi.
+- `npm run test:web` (Playwright/Chromium 390×844, saat sabit): `web-m3.mjs` PASS (29 denetim:
+  sayaç 90 sn → 60 sn sonra 30 sn → saat 30 sn geri → süre uzamıyor, yeniden açılışta aynı;
+  Türkçe ses yokken metin; web'de bildirim "desteklenmiyor"; Gelişim grafiği/geçmiş/süreklilik/
+  ölçüm; yedek indirme; bozuk ve ileri sürüm dosya reddi (85 XP değişmedi); önizleme 85 → 70;
+  geri yükleme; ikinci içe aktarma 70 XP; tümünü sil + tarayıcı yeniden açılışta boş; boş
+  kurulumda geri yükleme). Önceki üç akışın sonucu aşağıdaki satırda.
+- Aynı `dist` üzerinde `web-persistence.mjs`, `web-training.mjs`, `web-m2.mjs` → üçü de PASS (45 denetim).
+- `npx expo-doctor` → 18/20; 2 denetim ağ nedeniyle ÇALIŞMADI (`exp.host` çözülemedi: config
+  şeması ve React Native Directory). GEÇTİ SAYILMAZ. "Could not fetch bundled native modules"
+  uyarısı nedeniyle paket sürümü uyumu da çevrimiçi doğrulanmadı; sürümler `npx expo install`
+  ile SDK 58 için çözülmüştü.
+- `npx expo prebuild --platform ios --no-install` yalnız geçici bir kopyada, uydurma bir
+  deneme paket kimliğiyle çalıştırıldı (repoya yazılmadı): iOS projesi üretildi, push yetkisi
+  eklenmedi. Bu bir derleme veya cihaz testi DEĞİLDİR.
+
+### Doğrulanmamış / açık noktalar
+- iPhone'da hiçbir şey sınanmadı: migration 4, sayaç (arka plan/saat değişimi), bildirim izni
+  ve teslimi, hatırlatıcı güncellemesi, Türkçe ses, paylaşım menüsü/Dosyalar'dan içe aktarma,
+  silmenin bekleyen bildirimleri kaldırması. Hatırlatıcı testleri sahte zamanlayıcıyladır.
+- Sesli okumanın gerçekten konuştuğu hiçbir ortamda doğrulanmadı (başsız Chromium'da Türkçe ses yok).
+- Yedek dosyası şifrelenmez (arayüzde yazıyor). Bağımsız gizlilik/QA incelemesi yapılmadı.
+- Beş sekme 390 px'te sığıyor; 320 px veya büyük yazı tipinde dar olabilir (denetlenmedi).
+- `T.label` büyük harf dönüşümü web'de "TARİH" yerine "TARIH" gösteriyor (kozmetik).
 
 ## 2026-11-09 / M1 düzeltmeleri + M2 / haftalık değerlendirme ve ilerleme
 
@@ -304,16 +393,16 @@ training-service), `apps/mobile/e2e/web-training.mjs`, `apps/mobile/package*.jso
 - Export/import/silme yok (M3).
 
 ## Next
-1. Oturumu bu daldan başlatıp `/agents` ile avci-* ajanlarının yüklendiğini doğrula, `/resume-avci`.
-2. Yerel bilgisayarda `npx expo-doctor` ve `npx expo install --check`; EAS development build ile
-   iPhone'da M0–M2 akışını (migration 3, dinlenme sayacı + arka plan, uçak modu) sına.
-3. M3: Gelişim sekmesi (karşılaştırılabilir hareket grafikleri), yedek/dışa-içe aktarma ve
-   silme, yerel hatırlatma ve konuşma yetenek sınırları.
+1. Kullanıcı kararı: Expo hesabı, paket kimliği ve Apple Developer üyeliği (`docs/SETUP.md`
+   "iPhone development build"). Sonra EAS development build ve gerçek cihaz kontrol listesi.
+2. Ağ olan bir makinede `npx expo-doctor` ve `npx expo install --check`.
+3. avci-qa + avci-privacy ile M3 bağımsız incelemesi (yedek dosyası, silme, izinler).
 
 ## Completed milestones
 - M0: web üzerinde tamam ve test edildi. Native kısmı gerçek cihazda doğrulanmadı.
 - M1: web üzerinde tamam ve test edildi (2026-11-09). Native kısmı gerçek cihazda doğrulanmadı.
 - M2: web üzerinde tamam ve test edildi (2026-11-09). Native kısmı gerçek cihazda doğrulanmadı.
+- M3: web üzerinde tamam ve test edildi (2026-11-10). Native kısmı gerçek cihazda doğrulanmadı.
 
 ## Update template
 For each slice: date / milestone / implemented behavior / changed paths /

@@ -128,5 +128,21 @@
   `ios.bundleIdentifier` bilinçli olarak YOK: hesap ve paket kimliği kullanıcının kararıdır,
   uydurulmaz. `submit` profili yok (mağaza gönderimi yetkili değil).
 
+- 2026-11-10: Yedek = tam değiştirme, birleştirme değil. Gerekçe: tek cihazlı yerel üründe
+  birleştirme XP defterinde ve plan sürüm zincirinde belirsizlik yaratır; değiştirme tekrar içe
+  aktarmayı idempotent yapar (XP çoğalmaz). Önizleme bunu açıkça yazar ve onay ister. Zarf:
+  `avci-backup` v1 + kanonik JSON üzerinden sha256 (saf TS, bağımlılık yok); daha yeni sürüm
+  reddedilir. Sağlama bütünlük içindir, güvenlik değil: bu yüzden sağlaması düzeltilmiş dosya da
+  kayıt/ilişki/XP tutarı doğrulamasından geçmek zorundadır. Dosya şifrelenmez.
+- 2026-11-10: Tümünü silme sırası: önce hatırlatıcı iptali, sonra veri. İptal başarısızsa silme
+  yapılmaz (silinmiş veri için bildirim gelmesi, yarım silmeden daha kötü). Otomatik yedek/geri
+  yükleme yok. Ölçüm silme mezar taşıdır; "tümünü sil" mezar taşlarını da kaldırır.
+- 2026-11-10: Gelişim: seri anahtarı hareket|birim|yük türü; aynı günün seansları tek nokta;
+  yarıda bırakılan seanslar geçmişte/grafikte yok; ısınma ayrı sayılır; 1RM/BMI/görünüş puanı yok.
+  Süreklilikte biten antrenman günü "antrenman", aksi halde ana görev çözümü belirler; planlı
+  toparlanma antrenmanla aynı olumlu ağırlıkta gösterilir. Gelişim salt okurdur, görev günü açmaz.
+- 2026-11-10: M3 kayıtları migration 4 / belge v4 ile yalnız ekleyici olarak geldi; ayarlar tek
+  JSON satırı (`app_setting`), varsayılan: sesli okuma düğmeleri açık, hatırlatıcılar kapalı.
+
 Record implementation choices here with reason and validation, including
 task-day travel policy, persistence adapter, versions, and sync conflict policy.

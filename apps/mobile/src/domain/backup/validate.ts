@@ -202,7 +202,6 @@ const KEYS = {
 
 const SLOT_KINDS = ['checkin', 'core', 'habit'] as const;
 const RESOLUTIONS = ['training', 'recovery', 'illness-recovery'] as const;
-const TRI = ['yes', 'no', 'unknown'] as const;
 const UNITS = ['kg', 'lb'] as const;
 const CONVENTIONS = ['total', 'per-dumbbell', 'bodyweight', 'band'] as const;
 const SESSION_STATUS = ['in-progress', 'finished', 'abandoned'] as const;

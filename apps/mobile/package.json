@@ -53,7 +53,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "export:web": "expo export --platform web",
-    "test:web": "node e2e/web-persistence.mjs && node e2e/web-training.mjs && node e2e/web-m2.mjs",
+    "test:web": "node e2e/web-persistence.mjs && node e2e/web-training.mjs && node e2e/web-m2.mjs && node e2e/web-m3.mjs",
     "e2e:install-browser": "playwright install chromium"
   },
   "private": true

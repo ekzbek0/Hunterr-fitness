@@ -3,7 +3,7 @@
 // reminders unsupported on web, Gelişim tab, backup export/restore/corrupt file, delete all.
 // Usage: npm run export:web && node e2e/web-m3.mjs
 import { createServer } from 'node:http';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
@@ -125,8 +125,8 @@ try {
   await page.getByTestId('reminders-unsupported').waitFor();
   check((await page.getByTestId('reminders-unsupported').innerText()).includes('desteklenmiyor'), 'web says notifications are not supported');
   // Speech can be turned off: the button disappears.
-  await page.getByRole('button', { name: 'Sesli okuma açık' }).click();
-  await page.getByRole('button', { name: 'Sesli okuma kapalı' }).waitFor();
+  await page.getByRole('checkbox', { name: 'Sesli okuma açık' }).click();
+  await page.getByRole('checkbox', { name: 'Sesli okuma kapalı' }).waitFor();
   await tab(page, 'Bugün');
   await page.getByTestId('xp-total').waitFor();
   check((await page.getByRole('button', { name: 'Görevleri sesli oku' }).count()) === 0, 'speech off hides the read-aloud button');
@@ -135,7 +135,118 @@ try {
   check((await page.getByRole('button', { name: 'Görevleri sesli oku' }).count()) === 0, 'speech setting persists after reload');
   check(errors.length === 0, `no page errors (part A): ${errors.join(' | ')}`);
   await ctx.close();
-  // PART_B
+
+  // ---------- M3 part B: Gelişim, backup / restore / corrupt file, delete all ----------
+  ({ ctx, page, errors } = await launch(new Date('2026-11-09T06:10:00Z')));
+  await page.getByRole('button', { name: 'Antrenmana devam et: İtiş A' }).click();
+  await page.getByTestId('workout-summary').waitFor();
+  await page.getByLabel(`${EX} set türü`).getByRole('radio', { name: 'Isınma seti' }).click();
+  await page.getByLabel(`${EX} tekrar`, { exact: true }).fill('10');
+  await page.getByLabel(`${EX} ağırlık`, { exact: true }).fill('20');
+  await page.getByRole('button', { name: new RegExp(`${EX}: ısınma setini kaydet`) }).click();
+  await page.getByTestId('training-message').getByText('Set kaydedildi').waitFor();
+  await page.getByRole('button', { name: 'Antrenmanı bitir' }).click();
+  await page.getByText('Ana görev tamamlandı').waitFor();
+
+  await tab(page, 'Gelişim');
+  await page.getByTestId('progress-chart').first().waitFor();
+  const chartLabel = await page.getByTestId('progress-chart').first().getAttribute('aria-label');
+  check(chartLabel.includes(EX) && chartLabel.includes('kg'), `per-exercise chart is labelled with unit and load type (${chartLabel.slice(0, 60)}…)`);
+  check((await page.getByTestId('history-row').count()) === 1, 'history lists the finished workout');
+  const hist = await page.getByTestId('history-row').first().innerText();
+  check(/1 çalışma/i.test(hist) && /1 ısınma/i.test(hist), `history keeps work and warm-up sets apart (${hist.replace(/\n/g, ' ').slice(0, 70)})`);
+  const summary = await page.getByTestId('continuity-summary').innerText();
+  check(summary.includes('1 antrenman'), `continuity counts the day (${summary})`);
+  await page.getByLabel('Ölçüm değeri').fill('72,5');
+  await page.getByRole('button', { name: 'Ölçümü kaydet' }).click();
+  await page.getByTestId('measurement-row').first().waitFor();
+  check((await page.getByTestId('measurement-row').count()) === 1, 'dated measurement saved (72,5)');
+  if (shots) await page.screenshot({ path: `${shots}/gelisim.png`, fullPage: true });
+
+  await tab(page, 'Bugün');
+  const xpAtExport = await xp(page);
+  check(xpAtExport.includes('Toplam 70 XP'), `XP before export: ${xpAtExport}`);
+  await tab(page, 'Ayarlar');
+  const dl = page.waitForEvent('download');
+  await page.getByTestId('backup-export').click();
+  const download = await dl;
+  const backupPath = join(profileDir, 'yedek.json');
+  await download.saveAs(backupPath);
+  const env = JSON.parse(readFileSync(backupPath, 'utf8'));
+  check(download.suggestedFilename() === 'avci-yedek-2026-11-09.json' && env.format === 'avci-backup' && env.version === 1, 'versioned backup file downloaded');
+  check(env.data.sets.length === 2 && env.data.ledger.length === 2 && env.data.measurements.length === 1 && env.data.plans.length >= 1, 'backup holds sets, XP ledger, plan versions and measurements');
+
+  // Change data after the export so a restore is visible.
+  await tab(page, 'Bugün');
+  await page.getByRole('button', { name: /Yaptım/ }).first().click();
+  await page.getByTestId('xp-total').getByText('Toplam 85 XP').waitFor();
+
+  const pick = async (path) => {
+    await tab(page, 'Ayarlar');
+    const fc = page.waitForEvent('filechooser');
+    await page.getByTestId('backup-pick').click();
+    await (await fc).setFiles(path);
+  };
+  // Corrupt file: tampered XP (checksum no longer matches) -> rejected, nothing changes.
+  const corruptPath = join(profileDir, 'bozuk.json');
+  env.data.ledger[0].awardedXp = 99999;
+  writeFileSync(corruptPath, JSON.stringify(env));
+  await pick(corruptPath);
+  await page.getByTestId('backup-rejected').waitFor();
+  check((await page.getByTestId('backup-restore-confirm').count()) === 0, 'corrupt file cannot be restored');
+  const unsupportedPath = join(profileDir, 'yeni-surum.json');
+  writeFileSync(unsupportedPath, readFileSync(backupPath, 'utf8').replace('"version": 1', '"version": 2'));
+  await page.getByRole('button', { name: 'Kapat' }).click();
+  await pick(unsupportedPath);
+  await page.getByTestId('backup-rejected').waitFor();
+  await tab(page, 'Bugün');
+  check((await xp(page)).includes('Toplam 85 XP'), 'corrupt and unsupported files left the data unchanged (85 XP)');
+
+  await pick(backupPath);
+  await page.getByTestId('backup-preview').waitFor();
+  const impact = await page.getByTestId('backup-preview-xp').innerText();
+  check(impact.includes('85') && impact.includes('70'), `impact preview before restore: ${impact}`);
+  check((await page.getByTestId('backup-preview').innerText()).includes('TÜM mevcut kayıtlar'), 'preview states that restore replaces all data');
+  if (shots) await page.screenshot({ path: `${shots}/yedek-onizleme.png`, fullPage: true });
+  await page.getByTestId('backup-restore-confirm').click();
+  await page.getByTestId('backup-message').getByText('Geri yükleme tamamlandı').waitFor();
+  await tab(page, 'Bugün');
+  await page.getByTestId('xp-total').getByText('Toplam 70 XP').waitFor();
+  check(true, 'restore brought back the exported state (70 XP)');
+  await pick(backupPath);
+  await page.getByTestId('backup-restore-confirm').click();
+  await page.getByTestId('backup-message').getByText('Geri yükleme tamamlandı').waitFor();
+  await page.reload();
+  await tab(page, 'Bugün');
+  await page.getByTestId('xp-total').getByText('Toplam 70 XP').waitFor();
+  check(true, 'second import of the same file does not double XP (70 XP after reload)');
+  await tab(page, 'Gelişim');
+  await page.getByTestId('measurement-row').first().waitFor();
+  check((await page.getByTestId('history-row').count()) === 1, 'restored history and measurement are shown');
+
+  // Delete all: two steps, then the app is empty and stays empty.
+  await tab(page, 'Ayarlar');
+  await page.getByTestId('delete-all').click();
+  await page.getByTestId('delete-all-confirm').click();
+  await page.getByTestId('backup-message').getByText('silindi').waitFor();
+  await tab(page, 'Bugün');
+  await page.getByRole('button', { name: 'Başla' }).waitFor();
+  await ctx.close();
+  ({ ctx, page, errors } = await launch(new Date('2026-11-09T06:20:00Z')));
+  await page.getByRole('button', { name: 'Başla' }).waitFor();
+  check(true, 'after delete-all and a browser restart the app starts empty (no automatic restore)');
+  await tab(page, 'Gelişim');
+  await page.waitForTimeout(500);
+  check((await page.getByTestId('history-row').count()) === 0 && (await page.getByTestId('measurement-row').count()) === 0, 'no history or measurements remain');
+  // A backup can be restored on the empty install.
+  await pick(backupPath);
+  await page.getByTestId('backup-restore-confirm').click();
+  await page.getByTestId('backup-message').getByText('Geri yükleme tamamlandı').waitFor();
+  await tab(page, 'Bugün');
+  await page.getByTestId('xp-total').getByText('Toplam 70 XP').waitFor();
+  check(true, 'restore works on an empty install');
+  check(errors.length === 0, `no page errors (part B): ${errors.join(' | ')}`);
+  await ctx.close();
   console.log('PASS web M3 flow');
 } catch (e) {
   console.error(e);
