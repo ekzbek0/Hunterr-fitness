@@ -43,6 +43,8 @@ export type ImportPreview =
       /** Always true: a restore replaces all local data; it is not a merge. */
       replacesAll: true;
       notice: string;
+      /** Reminder choice stored in the backup; it becomes active again after a restore. */
+      backupReminders: { enabled: boolean; times: string[] };
     }
   | { ok: false; errors: BackupIssue[]; totalErrors: number };
 
@@ -53,7 +55,8 @@ export type ImportResult =
   | { status: 'failed'; message: string };
 
 export type DeleteResult =
-  | { status: 'deleted' }
+  /** `storagePurged` false: rows are gone, but the storage layer could not confirm that no residue of them remains in its files. */
+  | { status: 'deleted'; storagePurged: boolean }
   | { status: 'failed'; stage: 'reminders' | 'storage'; message: string };
 
 export function emptyBackupData(): BackupData {
@@ -86,7 +89,9 @@ export class BackupService {
   ) {}
 
   async exportBackup(): Promise<ExportResult> {
-    const data = await this.repo.transaction((tx) => tx.dumpAll());
+    const dumped = await this.repo.transaction((tx) => tx.dumpAll());
+    // A deleted measurement never leaves the device (rows deleted before hard-delete existed are dropped here).
+    const data = { ...dumped, measurements: dumped.measurements.filter((m) => m.deletedAt === null) };
     const now = this.clock.now();
     const tz = this.clock.timeZone();
     const envelope = buildBackupEnvelope(data, now.toISOString(), `avci-veri-semasi-${LATEST_SCHEMA_VERSION}`);
@@ -113,6 +118,7 @@ export class BackupService {
       backup: summarizeBackup(parsed.envelope.data),
       replacesAll: true,
       notice: RESTORE_REPLACES_NOTICE,
+      backupReminders: parsed.envelope.data.settings.reminders,
     };
   }
 
@@ -164,6 +170,12 @@ export class BackupService {
     } catch {
       return { status: 'failed', stage: 'storage', message: 'Veriler silinemedi; kayıtların değiştirilmedi. Lütfen tekrar dene.' };
     }
-    return { status: 'deleted' };
+    let storagePurged = false;
+    try {
+      storagePurged = await this.repo.purgeDeleted();
+    } catch {
+      storagePurged = false;
+    }
+    return { status: 'deleted', storagePurged };
   }
 }

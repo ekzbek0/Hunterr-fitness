@@ -140,7 +140,7 @@ function MeasurementRow({
       </View>
       {confirming && (
         <View style={{ gap: S.sm }}>
-          <Text style={T.body}>Bu ölçüm silinsin mi? Silinen ölçüm listeden ve grafiklerden kalkar.</Text>
+          <Text style={T.body}>Bu ölçüm silinsin mi? Silinen ölçüm cihazdan kalıcı olarak silinir ve yedeğe girmez.</Text>
           <View style={T.row}>
             <Button
               label="Evet, sil"

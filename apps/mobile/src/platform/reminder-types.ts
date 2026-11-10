@@ -28,4 +28,6 @@ export interface ReminderScheduler {
   cancel(id: string): Promise<void>;
   /** Cancels every AVCI reminder (delete-all, reminders turned off). */
   cancelAll(): Promise<void>;
+  /** Removes already delivered AVCI notifications from the notification centre (delete-all). */
+  clearDelivered(): Promise<void>;
 }

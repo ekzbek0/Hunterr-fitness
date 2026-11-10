@@ -48,5 +48,7 @@ export function createReminderScheduler(): ReminderScheduler {
     cancelAll: async () => {
       for (const id of await ids()) await Notifications.cancelScheduledNotificationAsync(id);
     },
+    // Every notification of this app is an AVCI reminder (no push), so all delivered ones are ours.
+    clearDelivered: () => Notifications.dismissAllNotificationsAsync(),
   };
 }

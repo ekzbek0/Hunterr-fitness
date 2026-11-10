@@ -267,9 +267,9 @@ function docTx(doc: AvciDocument): StoreTx {
       if (doc.measurements.some((x) => x.id === m.id)) throw new Error('UNIQUE constraint failed: measurement.id');
       doc.measurements.push(clone(m));
     },
-    deleteMeasurement: async (id, deletedAt) => {
-      const m = doc.measurements.find((x) => x.id === id);
-      if (m && m.deletedAt === null) m.deletedAt = deletedAt;
+    deleteMeasurement: async (id) => {
+      // Hard delete: a deleted measurement must not stay on the device or reach a backup.
+      doc.measurements = doc.measurements.filter((x) => x.id !== id);
     },
     getSettings: async () => clone({ ...DEFAULT_SETTINGS, ...doc.settings }),
     putSettings: async (v) => {
@@ -428,5 +428,7 @@ export async function createDocumentRepository(storage: DocumentStorage, kind: s
       return next;
     },
     close: () => storage.close(),
+    // The document is overwritten, but how the browser reclaims old IndexedDB pages is outside the app's control.
+    purgeDeleted: async () => false,
   };
 }

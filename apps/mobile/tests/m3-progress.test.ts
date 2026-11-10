@@ -380,15 +380,16 @@ describe.each(backends)('ProgressService ($name)', (backend) => {
 
     if (a.status !== 'ok') throw new Error('unreachable');
     expect(await progress.deleteMeasurement(a.value.id)).toEqual({ status: 'deleted' });
-    expect(await progress.deleteMeasurement(a.value.id)).toEqual({ status: 'already-deleted' });
+    expect(await progress.deleteMeasurement(a.value.id)).toEqual({ status: 'not-found' }); // gone for good
     expect(await progress.deleteMeasurement('missing')).toEqual({ status: 'not-found' });
 
     await restart();
     p = await progress.loadProgress();
     expect(p.measurements.some((m) => m.id === a.value.id)).toBe(false);
     expect(p.measurementGroups.map((g) => g.key)).toEqual(['body-weight|lb', 'waist|cm']);
-    // The tombstone is kept in storage (not resurrected, not hard-deleted).
-    const raw = await repo.transaction((tx) => tx.listMeasurements());
-    expect(raw.find((m) => m.id === a.value.id)!.deletedAt).not.toBeNull();
+    // Privacy: the row is removed from storage and never reaches a backup.
+    const raw = await repo.transaction((tx) => tx.dumpAll());
+    expect(raw.measurements.some((m) => m.id === a.value.id)).toBe(false);
+    expect(JSON.stringify(raw)).not.toContain(a.value.id);
   });
 });

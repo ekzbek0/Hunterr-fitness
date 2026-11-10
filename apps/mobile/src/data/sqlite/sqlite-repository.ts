@@ -383,8 +383,9 @@ function sqlTx(d: SqlDriver): StoreTx {
         [m.id, m.type, m.value, m.unit, m.measuredOn, m.recordedAt, m.deletedAt],
       );
     },
-    async deleteMeasurement(id, deletedAt) {
-      await d.run('UPDATE measurement SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', [deletedAt, id]);
+    async deleteMeasurement(id) {
+      // Hard delete: a deleted measurement must not stay on the device or reach a backup.
+      await d.run('DELETE FROM measurement WHERE id = ?', [id]);
     },
     async getSettings() {
       const r = await d.first<Row>("SELECT value FROM app_setting WHERE key = 'settings'");
@@ -595,10 +596,19 @@ function sqlTx(d: SqlDriver): StoreTx {
 
 export async function createSqliteRepository(driver: SqlDriver, kind: string): Promise<AvciRepository> {
   await driver.exec('PRAGMA foreign_keys = ON;');
+  await driver.exec('PRAGMA secure_delete = ON;');
   await migrate(driver);
   return {
     kind,
     transaction: (fn) => driver.transaction((d) => fn(sqlTx(d))),
     close: () => driver.close(),
+    purgeDeleted: async () => {
+      // Free pages are zeroed (secure_delete), the WAL is folded in and truncated, the file is rebuilt.
+      await driver.exec('PRAGMA secure_delete = ON;');
+      await driver.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      await driver.exec('VACUUM;');
+      await driver.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      return true;
+    },
   };
 }

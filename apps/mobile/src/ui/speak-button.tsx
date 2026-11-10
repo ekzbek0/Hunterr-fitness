@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { speakTurkish, stopSpeaking, turkishSpeechSupport, type SpeechSupport } from '@/platform/speech';
@@ -19,18 +19,29 @@ export function SpeakButton({ text, label, testID }: { text: string; label: stri
   const [speaking, setSpeaking] = useState(false);
   const [support, setSupport] = useState<SpeechSupport | null>(null);
   const mounted = useRef(true);
+  // One stable function per button, so the module-level `current` can be compared across renders.
+  const stopSelf = useCallback(() => {
+    if (mounted.current) setSpeaking(false);
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      if (current === stopSelf) void stopSpeaking();
+      if (current === stopSelf) {
+        current = null;
+        void stopSpeaking();
+      }
     };
-  }, []);
+  }, [stopSelf]);
 
-  function stopSelf() {
-    if (mounted.current) setSpeaking(false);
-  }
+  // Turning speech off in Ayarlar silences a running reading at once.
+  useEffect(() => {
+    if (!enabled && current === stopSelf) {
+      current = null;
+      void stopSpeaking();
+    }
+  }, [enabled, stopSelf]);
 
   if (!enabled) return null;
 

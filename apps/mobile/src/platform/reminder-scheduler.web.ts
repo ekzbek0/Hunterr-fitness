@@ -12,5 +12,6 @@ export function createReminderScheduler(): ReminderScheduler {
     },
     cancel: async () => undefined,
     cancelAll: async () => undefined,
+    clearDelivered: async () => undefined,
   };
 }

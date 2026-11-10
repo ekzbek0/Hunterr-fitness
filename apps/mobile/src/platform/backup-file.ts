@@ -8,20 +8,25 @@
  * NOT verified on a real iPhone yet.
  */
 import * as DocumentPicker from 'expo-document-picker';
-import { File, Paths } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { MAX_BACKUP_BYTES } from '@/domain/backup/format';
 
-import { pickAndRead, saveThroughShare, type PickResult, type SaveResult, type TempFile } from './backup-file-core';
+import { pickAndRead, saveThroughShare, sweepTemps, type PickResult, type SaveResult, type TempFile } from './backup-file-core';
 
 export { BackupFileError, TEMP_LEFT_NOTICE, type PickResult, type SaveResult } from './backup-file-core';
 
 /** Only files inside this app's cache directory are ours to delete. */
-function temp(file: File): TempFile {
+const norm = (uri: string) => uri.replace(/^file:\/\/\/private\//, 'file:///');
+const inCache = (uri: string) => norm(uri).startsWith(norm(Paths.cache.uri));
+
+function temp(file: File, unverifiedCopy = false): TempFile {
+  const owned = inCache(file.uri);
   return {
     uri: file.uri,
-    owned: file.uri.startsWith(Paths.cache.uri),
+    owned,
+    unverifiedCopy: unverifiedCopy && !owned,
     write: async (text) => file.write(text),
     text: () => file.text(),
     remove: () => {
@@ -58,9 +63,31 @@ export function pickBackupFile(): Promise<PickResult | null> {
         });
         if (result.canceled || !result.assets || result.assets.length === 0) return null;
         const asset = result.assets[0];
-        return { name: asset.name, size: typeof asset.size === 'number' ? asset.size : null, file: temp(new File(asset.uri)) };
+        return { name: asset.name, size: typeof asset.size === 'number' ? asset.size : null, file: temp(new File(asset.uri), true) };
       },
     },
     MAX_BACKUP_BYTES,
   );
+}
+
+const BACKUP_NAME = /^avci-yedek-.*\.json$/;
+
+/**
+ * Deletes leftover backup copies in the app cache: our own export files and
+ * the document picker's copies. Run at start and on delete-all. Returns false
+ * if something could not be removed (the caller must then not claim it is gone).
+ */
+export function sweepBackupTemp(): boolean {
+  try {
+    const found: File[] = [];
+    for (const entry of new Directory(Paths.cache).list()) {
+      if (entry instanceof File && BACKUP_NAME.test(entry.name)) found.push(entry);
+      if (entry instanceof Directory && entry.name === 'DocumentPicker') {
+        for (const inner of entry.list()) if (inner instanceof File) found.push(inner);
+      }
+    }
+    return sweepTemps(found.map((f) => temp(f)));
+  } catch {
+    return false;
+  }
 }

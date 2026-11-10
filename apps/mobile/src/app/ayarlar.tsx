@@ -108,7 +108,7 @@ function DataSection({ timezone }: { timezone?: string }) {
         {timezone && <Text style={T.muted}>Gün sınırı için saat dilimi: {timezone}</Text>}
       </Card>
       {backup && (
-        <BackupPanel backup={backup} afterChange={refresh} cancelReminders={() => reminders?.cancelAll() ?? Promise.resolve()} />
+        <BackupPanel backup={backup} afterChange={refresh} cancelReminders={() => reminders?.wipe() ?? Promise.resolve()} />
       )}
     </>
   );

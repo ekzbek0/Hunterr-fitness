@@ -200,7 +200,7 @@ export interface Measurement {
   /** Local date the user measured on (YYYY-MM-DD). */
   measuredOn: string;
   recordedAt: string;
-  /** Tombstone: deleted entries stay hidden and are never resurrected by a restore of this database. */
+  /** Always null for rows written now (deletion removes the row); kept for the stored shape. */
   deletedAt: string | null;
 }
 
@@ -280,8 +280,8 @@ export interface StoreTx {
 
   listMeasurements(): Promise<Measurement[]>;
   insertMeasurement(m: Measurement): Promise<void>;
-  /** Tombstones a measurement (sets deletedAt once). */
-  deleteMeasurement(id: string, deletedAt: string): Promise<void>;
+  /** Removes a measurement for good (no tombstone: the value must not linger or be exported). */
+  deleteMeasurement(id: string): Promise<void>;
   getSettings(): Promise<AppSettings>;
   putSettings(s: AppSettings): Promise<void>;
 
@@ -329,4 +329,10 @@ export interface AvciRepository {
   /** Runs `fn` atomically: either every write commits or none does. */
   transaction<T>(fn: (tx: StoreTx) => Promise<T>): Promise<T>;
   close(): Promise<void>;
+  /**
+   * After a delete: best effort to remove leftovers of deleted rows from the
+   * storage file itself (SQLite free pages / WAL). Resolves false when the
+   * storage cannot guarantee it (e.g. the browser's IndexedDB internals).
+   */
+  purgeDeleted(): Promise<boolean>;
 }

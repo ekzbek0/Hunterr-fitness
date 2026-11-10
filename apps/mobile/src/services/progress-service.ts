@@ -127,7 +127,7 @@ export class ProgressService {
       const existing = (await tx.listMeasurements()).find((m) => m.id === id);
       if (!existing) return { status: 'not-found' };
       if (existing.deletedAt !== null) return { status: 'already-deleted' };
-      await tx.deleteMeasurement(id, this.clock.now().toISOString());
+      await tx.deleteMeasurement(id);
       return { status: 'deleted' };
     });
   }

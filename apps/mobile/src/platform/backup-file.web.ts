@@ -49,3 +49,8 @@ export function pickBackupFile(): Promise<PickResult | null> {
     input.click();
   });
 }
+
+/** The browser keeps no app-owned file copies. */
+export function sweepBackupTemp(): boolean {
+  return true;
+}

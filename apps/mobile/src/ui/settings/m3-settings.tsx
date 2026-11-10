@@ -92,7 +92,8 @@ export function ReminderSettings() {
       <Text style={T.h3}>Hatırlatıcılar</Text>
       <Text style={T.muted}>
         Seçtiğin saatlerde günün görevini hatırlatan yerel bildirim (en fazla {MAX_REMINDER_TIMES} saat). İçerik plana göre
-        güncellenir: antrenman günü, planlı toparlanma günü. Görev tamamlandıysa o günün hatırlatıcısı kalkar.
+        güncellenir: antrenman günü, planlı toparlanma günü. Görev tamamlandıysa o günün hatırlatıcısı kalkar. Bildirimde
+        antrenman gününün adı yazar ve kilit ekranında görünebilir; sağlık kaydı (kontrol, ölçüm) yazmaz.
       </Text>
       <ToggleChip label={enabled ? 'Hatırlatıcılar açık' : 'Hatırlatıcılar kapalı'} selected={enabled} onPress={() => setEnabled(!enabled)} />
       {enabled && (

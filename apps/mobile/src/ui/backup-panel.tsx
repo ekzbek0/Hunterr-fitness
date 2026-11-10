@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { COUNT_LABELS } from '@/domain/backup/summary';
-import { BackupFileError, pickBackupFile, saveBackupFile, TEMP_LEFT_NOTICE } from '@/platform/backup-file';
+import { BackupFileError, pickBackupFile, saveBackupFile, sweepBackupTemp, TEMP_LEFT_NOTICE } from '@/platform/backup-file';
 import type { BackupService, ImportPreview } from '@/services/backup-service';
 import { Button, Card, T } from '@/ui/components';
 import { formatDate } from '@/ui/labels';
@@ -85,7 +85,12 @@ export function BackupPanel({
       setConfirmDelete(false);
       if (r.status === 'deleted') {
         setPicked(null);
-        setMsg({ text: 'Bu cihazdaki tüm AVCI verileri ve planlı hatırlatıcılar silindi.', tone: 'ok' });
+        const tempsGone = sweepBackupTemp();
+        const parts = ['Uygulamadaki tüm AVCI kayıtları ve planlı hatırlatıcılar silindi.'];
+        if (!r.storagePurged) parts.push('Depolama katmanı, silinen kayıtların izlerinin dosyadan tamamen temizlendiğini doğrulayamıyor.');
+        if (!tempsGone) parts.push(TEMP_LEFT_NOTICE);
+        parts.push('Dışa aktardığın yedek dosyaları ve daha önce alınmış cihaz/iCloud yedekleri bu işlemle silinmez.');
+        setMsg({ text: parts.join(' '), tone: r.storagePurged && tempsGone ? 'ok' : 'error' });
         await afterChange();
       } else {
         setMsg({ text: r.message, tone: 'error' });
@@ -97,8 +102,9 @@ export function BackupPanel({
     <Card>
       <Text style={T.h3}>Yedekleme ve geri yükleme</Text>
       <Text style={T.muted}>
-        Yedek, bu cihazdaki tüm kayıtları (görevler, kontroller, program sürümleri, setler, XP defteri, öneri kararları,
-        ölçümler, ayarlar) sürümlü tek bir dosyaya yazar. Dosya şifrelenmez ve sağlık verisi içerir; güvendiğin bir yerde sakla.
+        Yedek, bu cihazdaki tüm kayıtları (görevler, günlük kontroller, antrenman profili, program sürümleri, setler, XP
+        defteri, öneri kararları, ölçümler, ayarlar) sürümlü tek bir dosyaya yazar. Sildiğin ölçümler yedeğe girmez. Dosya
+        şifrelenmez ve sağlık verisi içerir; güvendiğin bir yerde sakla.
       </Text>
       <Button label="Yedeği dışa aktar" disabled={busy} onPress={doExport} testID="backup-export" />
       <Button label="Yedek dosyası seç" variant="secondary" disabled={busy} onPress={doPick} testID="backup-pick" />
@@ -135,6 +141,12 @@ export function BackupPanel({
               {label}: şimdi {preview.current.counts[key]} → sonra {preview.backup.counts[key]}
             </Text>
           ))}
+          <Text style={T.muted} testID="backup-preview-reminders">
+            Hatırlatıcılar:{' '}
+            {preview.backupReminders.enabled && preview.backupReminders.times.length > 0
+              ? `yedekte açık (${preview.backupReminders.times.join(', ')}); bildirim izni varsa geri yüklemeden sonra yeniden planlanır`
+              : 'yedekte kapalı'}
+          </Text>
           <Text style={[T.body, { color: C.warning }]}>{preview.notice}</Text>
           <View style={T.row}>
             <Button label="Geri yüklemeyi onayla" disabled={busy} onPress={doRestore} testID="backup-restore-confirm" />
@@ -145,8 +157,9 @@ export function BackupPanel({
 
       <Text style={T.label}>Tüm yerel verileri sil</Text>
       <Text style={T.muted}>
-        Bu cihazdaki tüm AVCI kayıtlarını ve planlı hatırlatıcıları siler. Geri alınamaz; hiçbir şey kendiliğinden geri
-        yüklenmez. Daha önce dışa aktardığın yedek dosyalarına dokunulmaz; onları sen silersin. Önce yedek almak isteyebilirsin.
+        Uygulamadaki tüm AVCI kayıtlarını, planlı ve gösterilmiş hatırlatıcıları siler. Geri alınamaz; hiçbir şey
+        kendiliğinden geri yüklenmez. Dışa aktardığın yedek dosyalarına ve daha önce alınmış cihaz/iCloud yedeklerine
+        uygulama dokunamaz; onları sen silersin. Önce yedek almak isteyebilirsin.
       </Text>
       {confirmDelete ? (
         <View style={T.row}>

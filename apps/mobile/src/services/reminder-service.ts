@@ -92,6 +92,14 @@ export class ReminderService {
     return this.serial(() => this.scheduler.cancelAll());
   }
 
+  /** Delete-all: no pending reminder and no delivered banner (with a workout title) stays behind. */
+  wipe(): Promise<void> {
+    return this.serial(async () => {
+      await this.scheduler.cancelAll();
+      await this.scheduler.clearDelivered();
+    });
+  }
+
   reconcile(): Promise<ReminderSyncResult> {
     return this.serial(() => this.reconcileNow());
   }

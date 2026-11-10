@@ -101,7 +101,7 @@ describe.each(backends)('backup service ($name)', (backend) => {
     expect(before.plans.length).toBeGreaterThan(0);
     expect(before.weeklyReviews).toHaveLength(1);
 
-    expect(await backup.deleteAllData(async () => undefined)).toEqual({ status: 'deleted' });
+    expect(await backup.deleteAllData(async () => undefined)).toMatchObject({ status: 'deleted' });
     expect((await dump(repo)).ledger).toEqual([]);
 
     const preview = await backup.previewImport(out.json);
@@ -230,6 +230,7 @@ describe.each(backends)('backup service ($name)', (backend) => {
     const failing: AvciRepository = {
       kind: repo.kind,
       close: () => repo.close(),
+      purgeDeleted: () => repo.purgeDeleted(),
       transaction: (fn) =>
         repo.transaction((tx) =>
           fn(
@@ -257,7 +258,8 @@ describe.each(backends)('backup service ($name)', (backend) => {
     const r = await backup.deleteAllData(async () => {
       order.push(`cancel (profile still there: ${(await dump(repo)).profile !== null})`);
     });
-    expect(r).toEqual({ status: 'deleted' });
+    // SQLite rebuilds its file (secure_delete + WAL truncate + VACUUM); IndexedDB cannot promise that.
+    expect(r).toEqual({ status: 'deleted', storagePurged: backend.name === 'SQLite' });
     expect(order).toEqual(['cancel (profile still there: true)']);
     const empty = await dump(repo);
     expect(empty.profile).toBeNull();
@@ -271,6 +273,23 @@ describe.each(backends)('backup service ($name)', (backend) => {
     const today = await new AvciService(repo, clock).loadToday();
     expect(today.profile).toBeNull();
     expect(today.progress.totalXp).toBe(0);
+  });
+
+  it('privacy: a legacy tombstoned measurement is not exported; reminder choice is shown in the preview', async () => {
+    await seed(repo, clock);
+    await repo.transaction((tx) =>
+      tx.insertMeasurement({
+        id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', type: 'body-weight', value: 123.4, unit: 'kg', measuredOn: '2026-11-08',
+        recordedAt: clock.now().toISOString(), deletedAt: clock.now().toISOString(),
+      }),
+    );
+    const out = await backup.exportBackup();
+    expect(out.json).not.toContain('ffffffff-ffff-4fff-8fff-ffffffffffff');
+    expect(out.json).not.toContain('123.4');
+    expect(out.summary.counts.deletedMeasurements).toBe(0);
+    const preview = await backup.previewImport(out.json);
+    if (!preview.ok) throw new Error('preview rejected');
+    expect(preview.backupReminders).toEqual({ enabled: true, times: ['07:30'] });
   });
 
   it('delete all aborts without deleting when reminders cannot be cancelled', async () => {

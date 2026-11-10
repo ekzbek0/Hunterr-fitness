@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 
 import { openRepository } from '@/data/open-repository';
 import type { AvciRepository } from '@/data/types';
+import { sweepBackupTemp } from '@/platform/backup-file';
 import { createReminderScheduler } from '@/platform/reminder-scheduler';
 import { AvciService, type CompletionResult, type TodaySnapshot } from '@/services/avci-service';
 import { ReminderService, type ReminderSyncResult } from '@/services/reminder-service';
@@ -45,6 +46,8 @@ export function AvciProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
+        // Leftover backup copies (e.g. the app was killed while the share sheet was open) are removed at start.
+        sweepBackupTemp();
         const r = await openRepository();
         const svc = new AvciService(r);
         const snap = await svc.loadToday();

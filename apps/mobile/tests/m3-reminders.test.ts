@@ -49,6 +49,9 @@ class FakeScheduler implements ReminderScheduler {
     this.log.push('cancelAll');
     this.scheduled.clear();
   }
+  async clearDelivered() {
+    this.log.push('clearDelivered');
+  }
   list() {
     return [...this.scheduled.values()].sort((a, b) => a.fireAt.localeCompare(b.fireAt));
   }
@@ -201,6 +204,11 @@ describe.each(backends)('reminder service ($name)', (backend) => {
     await setup();
     await reminders.save({ enabled: true, times: ['18:00'] });
     expect(await reminders.save({ enabled: false, times: ['18:00'] })).toEqual({ state: 'off' });
+    expect(sched.list()).toEqual([]);
+    await reminders.save({ enabled: true, times: ['18:00'] });
+    sched.log = [];
+    await reminders.wipe(); // delete-all: pending and delivered ones go
+    expect(sched.log).toEqual(['cancelAll', 'clearDelivered']);
     expect(sched.list()).toEqual([]);
     const web = new FakeScheduler();
     web.supported = false;

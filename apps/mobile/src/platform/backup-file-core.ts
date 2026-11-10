@@ -43,6 +43,12 @@ export interface TempFile {
   uri: string;
   /** True only for a file inside the app's own cache directory. */
   owned: boolean;
+  /**
+   * True when the system made this copy for the app (document picker) even if
+   * its path could not be matched to the app cache. Such a file is NOT deleted
+   * (it might not be ours) and is reported as possibly left behind.
+   */
+  unverifiedCopy?: boolean;
   write(text: string): Promise<void>;
   text(): Promise<string>;
   /** Deletes the file if it exists; throws when deletion fails. */
@@ -51,7 +57,8 @@ export interface TempFile {
 
 /** Returns true when no app-owned copy remains (or there was none to remove). */
 function cleanup(file: TempFile | null): boolean {
-  if (!file || !file.owned) return true;
+  if (!file) return true;
+  if (!file.owned) return !file.unverifiedCopy;
   try {
     file.remove();
     return true;
@@ -85,6 +92,16 @@ export async function saveThroughShare(
     throw new BackupFileError(message(e, 'Yedek paylaşılamadı.'), cleanup(file));
   }
   return { outcome: 'shared', tempCopyRemoved: cleanup(file) };
+}
+
+/**
+ * Removes leftover app-owned backup copies (e.g. the app was killed while the
+ * share sheet was open). Returns false if any could not be removed.
+ */
+export function sweepTemps(files: readonly TempFile[]): boolean {
+  let all = true;
+  for (const f of files) if (f.owned && !cleanup(f)) all = false;
+  return all;
 }
 
 export async function pickAndRead(

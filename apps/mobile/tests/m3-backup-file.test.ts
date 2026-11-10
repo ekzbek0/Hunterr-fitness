@@ -135,3 +135,25 @@ describe('import: picker cache copy', () => {
     expect((await failure(pickAndRead(pickIo(disk, 500), 100))).tempCopyRemoved).toBe(false);
   });
 });
+
+describe('leftovers and unverifiable copies', () => {
+  it('sweep removes app-owned leftovers only and reports a failure', async () => {
+    const { sweepTemps } = await import('@/platform/backup-file-core');
+    const disk = new Disk();
+    disk.files.set(CACHE + 'avci-yedek-2026-11-09.json', '{}');
+    disk.files.set(USER_COPY, '{}');
+    expect(sweepTemps([disk.temp(CACHE + 'avci-yedek-2026-11-09.json'), disk.temp(USER_COPY, false)])).toBe(true);
+    expect([...disk.files.keys()]).toEqual([USER_COPY]);
+    disk.files.set(CACHE + 'x.json', '{}');
+    disk.failRemove = true;
+    expect(sweepTemps([disk.temp(CACHE + 'x.json')])).toBe(false);
+  });
+  it('a picker copy whose path cannot be matched to the app cache is not deleted and is reported as possibly left', async () => {
+    const disk = new Disk();
+    const odd = 'file:///somewhere/else/picked.json';
+    disk.files.set(odd, '{}');
+    const r = await pickAndRead({ pick: async () => ({ name: 'p.json', size: 2, file: { ...disk.temp(odd, false), unverifiedCopy: true } }) }, 100);
+    expect(r).toMatchObject({ text: '{}', tempCopyRemoved: false });
+    expect(disk.files.has(odd)).toBe(true);
+  });
+});
