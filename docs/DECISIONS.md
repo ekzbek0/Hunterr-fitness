@@ -175,7 +175,9 @@
   reçetesi ve ekipman artışı, o anda kurallarla yeniden hesaplananla aynı değilse öneri
   "bayat" işaretlenir ve uygulanmaz. Gerekçe: aynı kanıt anahtarını taşıyan ama hedefi elle
   değiştirilmiş (yedekten gelen) öneri eskiden uygulanıyordu. Saklanan öneri içeriği asla
-  yük kaynağı değildir; kaynak her zaman belirleyici kuraldır.
+  yük kaynağı değildir; kaynak her zaman belirleyici kuraldır. Aynı karşılaştırma (`sameNumbers`) haftalık
+  değerlendirmede de yapılır: rakamları farklı bekleyen öneri "bayat" olur ve kuralların ürettiği
+  yeni öneri gösterilir (kullanıcının onayladığı önizleme her zaman kuralların çıktısıdır).
 - 2026-11-10: Ölçüm silme artık kalıcı silmedir (mezar taşı yok) ve silinmiş ölçüm yedeğe
   girmez. Gerekçe: gizlilik incelemesi; kullanıcı "sildim" dediği sağlık verisinin cihazda ve
   dışa aktarılan dosyada kalmasını beklemez. M4 notu: eşitleme geldiğinde "silinen kaydın geri
@@ -198,7 +200,10 @@
   ile başlıyordu (QA, kaynak okuyarak). Gerçek iPhone'da ÇALIŞTIRILMADI.
 - 2026-11-10: Kayıtlar okunamadığında çıkış yolu. Depo, ilk okumadan önce yayımlanır; okuma
   hatasında Ayarlar açık kalır ve yedek alma, geri yükleme, tümünü silme kullanılabilir.
-  Hiçbir kayıt kendiliğinden onarılmaz veya silinmez. Doğrulama: e2e/web-recovery.mjs (yalnız web).
+  Hiçbir kayıt kendiliğinden onarılmaz veya silinmez. Depo tek bir paylaşılan açma sözüyle
+  açılır (iOS'ta expo-sqlite aynı yol için aynı yerel bağlantıyı döndürdüğünden iki kuyruk
+  oluşmamalı). Mevcut kayıtlar okunamasa da geri yükleme önizlemesi çalışır ("şimdi: okunamadı").
+  Doğrulama: e2e/web-recovery.mjs (yalnız web; hata ekranından sağlam yedeği geri yükleme dahil).
 - 2026-11-10: `preview` EAS profili günlük kullanım derlemesidir: `distribution: internal`,
   `developmentClient: false`, iOS `Release`; uygulama kodu derlemenin içindedir ve geliştirme
   sunucusu gerekmez. `development` profili ayrı kalır (dev client, Metro gerekir).

@@ -134,11 +134,11 @@ export function BackupPanel({
               : ''}
           </Text>
           <Text style={T.body} testID="backup-preview-xp">
-            Toplam XP: şimdi {preview.current.totalXp} → geri yüklemeden sonra {preview.backup.totalXp}
+            Toplam XP: şimdi {preview.current ? preview.current.totalXp : 'okunamadı'} → geri yüklemeden sonra {preview.backup.totalXp}
           </Text>
           {COUNT_LABELS.map(([key, label]) => (
             <Text key={key} style={T.muted}>
-              {label}: şimdi {preview.current.counts[key]} → sonra {preview.backup.counts[key]}
+              {label}: şimdi {preview.current ? preview.current.counts[key] : 'okunamadı'} → sonra {preview.backup.counts[key]}
             </Text>
           ))}
           <Text style={T.muted} testID="backup-preview-reminders">

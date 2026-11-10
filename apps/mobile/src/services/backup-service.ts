@@ -41,7 +41,8 @@ export type ImportPreview =
       exportedAt: string;
       version: number;
       appSchema: string;
-      current: BackupSummary;
+      /** null: the current records could not be read (the restore still replaces them). */
+      current: BackupSummary | null;
       backup: BackupSummary;
       /** Always true: a restore replaces all local data; it is not a merge. */
       replacesAll: true;
@@ -113,13 +114,19 @@ export class BackupService {
     if (!parsed.ok) return parsed;
     const ahead = checkBackupClock(parsed.envelope.data, this.clock.now());
     if (ahead.length > 0) return { ok: false, errors: ahead, totalErrors: ahead.length };
-    const current = await this.repo.transaction((tx) => tx.dumpAll());
+    // Best effort: when the current records cannot be read, the user can still restore a valid backup.
+    let current: BackupSummary | null = null;
+    try {
+      current = summarizeBackup(await this.repo.transaction((tx) => tx.dumpAll()));
+    } catch {
+      current = null;
+    }
     return {
       ok: true,
       exportedAt: parsed.envelope.exportedAt,
       version: parsed.envelope.version,
       appSchema: parsed.envelope.appSchema,
-      current: summarizeBackup(current),
+      current,
       backup: summarizeBackup(parsed.envelope.data),
       replacesAll: true,
       notice: RESTORE_REPLACES_NOTICE,

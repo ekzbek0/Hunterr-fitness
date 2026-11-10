@@ -41,7 +41,7 @@ export function AvciProvider({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
   const [dataVersion, setDataVersion] = useState(0);
   const serviceRef = useRef<AvciService | null>(null);
-  const repoRef = useRef<AvciRepository | null>(null);
+  const openRef = useRef<Promise<AvciRepository> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,8 +52,10 @@ export function AvciProvider({ children }: { children: ReactNode }) {
         // The repository is opened once and reused by "Tekrar dene". It is published
         // BEFORE the first read, so that Ayarlar can still export a backup, restore one
         // or delete everything when the stored records cannot be read.
-        const r = repoRef.current ?? (await openRepository());
-        repoRef.current = r;
+        // One shared open: an effect that re-runs while the first open is in flight reuses it
+        // (expo-sqlite hands out the same native connection per path, so two queues must not exist).
+        openRef.current ??= openRepository();
+        const r = await openRef.current;
         const svc = serviceRef.current ?? new AvciService(r);
         serviceRef.current = svc;
         const rem = remindersRef.current ?? new ReminderService(r, createReminderScheduler());
@@ -70,6 +72,8 @@ export function AvciProvider({ children }: { children: ReactNode }) {
         setError(null);
       } catch (e) {
         if (cancelled) return;
+        // A failed open is retried by "Tekrar dene"; a failed first read keeps the open repository.
+        if (!serviceRef.current) openRef.current = null;
         setError(e instanceof Error ? e.message : String(e));
         setStatus('error');
       }

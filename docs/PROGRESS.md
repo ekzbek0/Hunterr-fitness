@@ -54,18 +54,27 @@ içeren son commit.
 - Superpowers (obra/superpowers 6.4.2) bu bulut oturumunda yüklü ve çağrılabilir. Gerçekten
   çağrılan beceriler: `systematic-debugging`, `test-driven-development`,
   `verification-before-completion` (QA düzeltmelerinde: önce kırmızı test, düzeltmeyi geri
-  alıp kırmızıyı yeniden görme, sonra tam paket) ve `requesting-code-review` (son değişiklikler
-  için ayrı bir salt okuma gözden geçirici; sonucu aşağıda). Bu turun ilk düzeltmeleri
+  alıp kırmızıyı yeniden görme, sonra tam paket) ve `requesting-code-review` (`3d26ffd..ca96d62`
+  için ayrı, salt okuma bir gözden geçirici alt ajan; ilk denemesi kullanım sınırına takıldı,
+  sınır sıfırlanınca kaldığı yerden tamamladı; kendisi vitest 356 PASS ve tsc çalıştırdı).
+  Gözden geçirme sonucu: Kritik yok. Önemli 1 (haftalık değerlendirme, rakamları kurallardan
+  farklı bekleyen öneriyi göstermeye devam ediyordu) → kırmızı testle düzeltildi; ortak
+  `sameNumbers` yardımcı fonksiyonu hem kabulde hem değerlendirmede kullanılıyor. Önemli 2
+  (saati ileri alınmış cihazın kendi yedeği yeni cihazda reddedilir) → davranış korunuyor,
+  kullanıcı kararı olarak aşağıda. Küçük 3 (sağlayıcı yeniden çalışırsa ikinci depo açılabilir)
+  → tek paylaşılan açma sözü ile düzeltildi. Küçük 5 (mevcut kayıtlar okunamazsa önizleme
+  düşüyordu) → kırmızı testle düzeltildi, "şimdi" sütunu "okunamadı" gösterir; web kurtarma
+  akışına hata ekranından sağlam yedeği geri yükleme eklendi. Küçük 4 ve 6 kalan bulgularda. Bu turun ilk düzeltmeleri
   (iki yönlü doğrulama, geçici dosya) test-önce yazılmadı; iki kullanıcı vakası için
   kırmızı sonradan eski doğrulayıcıya karşı doğrulandı. `m2-migration` v3→v4 hata testi ve
   artış değişikliği testi karakterizasyon testidir (ilk çalıştırmada geçti).
 
 ### Çalıştırılan komutlar ve gerçek sonuçlar — BU ortam (bulut, Linux, Node 22.23.4 / npm 10.9.9, `apps/mobile`)
 - `npx tsc --noEmit` → hata yok. `npx expo lint` → çıkış 0.
-- `npx vitest run` → 17 dosya, 356 test geçti (SQLite node:sqlite + IndexedDB fake-indexeddb).
+- `npx vitest run` → 17 dosya, 360 test geçti (SQLite node:sqlite + IndexedDB fake-indexeddb).
 - `npx expo export --platform web` → `dist/` üretildi.
-- `npm run test:web` (Playwright/Chromium, saat sabit) → altı akış PASS, 103 denetim:
-  persistence 9, training 17, M2 19, M3 28, layout 22 (320 ve 390 px), recovery 8.
+- `npm run test:web` (Playwright/Chromium, saat sabit) → altı akış PASS, 105 denetim:
+  persistence 9, training 17, M2 19, M3 28, layout 22 (320 ve 390 px), recovery 10.
   (Önceki kayıttaki "M3 29 denetim" yanlıştı; gerçek sayı 28.)
 - `CI=1 npx --yes expo-doctor` → 18/20. 2 denetim ağ nedeniyle ÇALIŞMADI (`exp.host`
   çözülemedi: config şeması, React Native Directory). GEÇTİ SAYILMAZ.
@@ -127,6 +136,14 @@ Kalanların hepsi hesap veya cihaz ister; hiçbiri uydurulmadı:
    belge seçici önbellek dizini, büyük yazı tipi ve VoiceOver, uçak modu.
 
 ### Kalan bulgular (düzeltilmedi)
+- Gözden geçirme 2 (kullanıcı kararı): cihaz saati bir süre ileri alınmışken yazılmış bir yedek,
+  saat düzeltildikten sonra (ör. yeni telefonda) o zamana kadar geri yüklenemez. Şu anki kural
+  reddetmek; alternatif, uyarıyla kabul edip ödülleri o ana kadar dondurmak.
+- Gözden geçirme 4: bitmiş sayaç, bitişten sonraki ilk 5 sn'lik kayıt aralığında uygulama
+  öldürülür ve sonra saat geri alınırsa "belirsiz" görünebilir (süre yine uzamaz).
+- Gözden geçirme 6 (iPhone'da farklı olabilecekler, sınanmadı): geliştirme modunda expo-sqlite
+  DevTools aynı bağlantıyı kullanabilir; ROLLBACK da başarısız olursa sonraki işlemler yeniden
+  başlatmaya kadar başarısız olur; hiç bitmeyen bir işlem tüm veritabanı erişimini bekletir.
 - QA 6: kabul edilmiş öneri ↔ plan `proposalId` çapraz denetimi yok; sıfır setli ödüllü bitmiş
   seans kabul ediliyor; bilinmeyen `exerciseId`'li öneri kabul ediliyor; geri okuma yalnız sayı
   ve XP'yi karşılaştırıyor; dışa aktarma uyarısı 20 MB sınırını söylemiyor; tarihî kayıtlar

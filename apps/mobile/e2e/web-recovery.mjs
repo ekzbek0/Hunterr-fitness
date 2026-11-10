@@ -45,6 +45,13 @@ try {
   await page.getByRole('button', { name: 'Kontrolü kaydet' }).click();
   await page.getByText('+10 XP kaydedildi.').waitFor();
 
+  // A good backup taken while everything still works.
+  await tab(page, 'Ayarlar');
+  const [good] = await Promise.all([page.waitForEvent('download'), page.getByTestId('backup-export').click()]);
+  const goodPath = join(profileDir, 'saglam-yedek.json');
+  await good.saveAs(goodPath);
+  await tab(page, 'Bugün');
+
   // Break the stored document: a task day with a higher sequence but an earlier date.
   await page.evaluate(
     () =>
@@ -82,6 +89,24 @@ try {
   await page.getByTestId('backup-message').waitFor();
   check(/tutarsızlık/i.test(await page.getByTestId('backup-message').innerText()), 'the export warns that this file has problems');
 
+  // Restore the good backup from the error state: preview shows "okunamadı" or the numbers, then the app opens.
+  await page.reload();
+  await page.getByText('Kayıtlar açılamadı').waitFor();
+  await tab(page, 'Ayarlar');
+  const fc = page.waitForEvent('filechooser');
+  await page.getByTestId('backup-pick').click();
+  await (await fc).setFiles(goodPath);
+  await page.getByTestId('backup-preview').waitFor();
+  await page.getByTestId('backup-restore-confirm').click();
+  await page.getByTestId('backup-message').getByText('Geri yükleme tamamlandı').waitFor();
+  await tab(page, 'Bugün');
+  await page.getByTestId('xp-total').getByText('Toplam 10 XP').waitFor();
+  check(true, 'restoring a good backup from the error state opens the app with its records (10 XP)');
+  await page.reload();
+  await page.getByTestId('xp-total').getByText('Toplam 10 XP').waitFor();
+  check(true, 'the restored state survives a reload');
+
+  await tab(page, 'Ayarlar');
   await page.getByTestId('delete-all').click();
   await page.getByTestId('delete-all-confirm').click();
   await tab(page, 'Bugün');

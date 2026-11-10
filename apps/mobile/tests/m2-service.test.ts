@@ -257,6 +257,23 @@ describe.each(backends)('M1 fixes + M2 ($name)', (backend) => {
     expect((await repo.transaction((tx) => tx.getProposal(p.id)))!.status).toBe('stale');
   });
 
+  it('REGRESSION: the weekly review never shows a pending proposal whose numbers differ from the rules; it offers the rule-made one', async () => {
+    await twoGoodSessions();
+    const p = (await benchProposal())!;
+    const backup = new BackupService(repo, clock);
+    const env = JSON.parse((await backup.exportBackup()).json);
+    env.data.proposals.find((x: { id: string }) => x.id === p.id).after.load = 500;
+    env.checksum = backupChecksum(env.data);
+    expect((await backup.importBackup(JSON.stringify(env))).status).toBe('restored');
+    const review = ok(await service.loadWeeklyReview());
+    const bench = review.proposals.filter((x) => x.exerciseId === BENCH);
+    expect(bench.find((x) => x.id === p.id)!.status).toBe('stale');
+    const pending = bench.filter((x) => x.status === 'pending');
+    expect(pending).toHaveLength(1);
+    expect(pending[0].after.load).toBe(62.5);
+    expect(ok(await service.acceptProposal(pending[0].id, { techniqueConfirmed: true })).proposal.status).toBe('accepted');
+  });
+
   it('changing the confirmed increment after a proposal makes the old proposal stale instead of applying the old step', async () => {
     await twoGoodSessions();
     const p = (await benchProposal())!;
