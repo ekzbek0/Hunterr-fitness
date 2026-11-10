@@ -7,11 +7,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { AvciRepository } from '@/data/types';
+import { backupChecksum } from '@/domain/backup/format';
 import type { Program } from '@/domain/training/program';
 import { DRAFT_TRAINING_PROFILE } from '@/domain/training/profile';
 import { restView } from '@/domain/training/rest';
 import type { SetInput } from '@/domain/training/workout';
 import { AvciService } from '@/services/avci-service';
+import { BackupService } from '@/services/backup-service';
 
 import { backends, FakeClock, goodCheckin } from './helpers';
 
@@ -233,6 +235,37 @@ describe.each(backends)('M1 fixes + M2 ($name)', (backend) => {
     // Decided proposals cannot be decided again; XP unchanged by plan changes.
     expect((await service.acceptProposal(p.id, { techniqueConfirmed: true })).status).toBe('rejected');
     expect((await service.loadToday()).progress.totalXp).toBe(10 * 3 + 60 * 2);
+  });
+
+  it('REGRESSION: a stored proposal whose target no longer equals the freshly computed one is stale, never applied', async () => {
+    await twoGoodSessions();
+    const p = (await benchProposal())!;
+    const planBefore = (await service.loadTraining()).plan!;
+    // The real path: a restored, hand-edited backup with the same evidence but a fabricated target.
+    // (updateProposal deliberately cannot change proposal content.)
+    const backup = new BackupService(repo, clock);
+    const env = JSON.parse((await backup.exportBackup()).json);
+    env.data.proposals.find((x: { id: string }) => x.id === p.id).after.load = 500;
+    env.checksum = backupChecksum(env.data);
+    expect((await backup.importBackup(JSON.stringify(env))).status).toBe('restored');
+    expect((await repo.transaction((tx) => tx.getProposal(p.id)))!.after.load).toBe(500);
+    const r = await service.acceptProposal(p.id, { techniqueConfirmed: true });
+    expect(r.status === 'rejected' && r.reason).toBe('proposal-stale');
+    const after = (await service.loadTraining()).plan!;
+    expect(after.id).toBe(planBefore.id);
+    expect(after.program.days.flatMap((d) => d.exercises).some((e) => e.targetLoad)).toBe(false);
+    expect((await repo.transaction((tx) => tx.getProposal(p.id)))!.status).toBe('stale');
+  });
+
+  it('changing the confirmed increment after a proposal makes the old proposal stale instead of applying the old step', async () => {
+    await twoGoodSessions();
+    const p = (await benchProposal())!;
+    expect(p.after.load).toBe(62.5);
+    ok(await service.confirmIncrement('barbell', 'kg', 1.25));
+    const planBefore = (await service.loadTraining()).plan!;
+    const r = await service.acceptProposal(p.id, { techniqueConfirmed: true });
+    expect(r.status === 'rejected' && r.reason).toBe('proposal-stale');
+    expect((await service.loadTraining()).plan!.id).toBe(planBefore.id);
   });
 
   it('decline is recorded, plan unchanged, same evidence is not proposed again', async () => {

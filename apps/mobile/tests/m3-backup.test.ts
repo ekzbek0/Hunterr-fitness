@@ -7,11 +7,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { AvciRepository, BackupData, StoreTx } from '@/data/types';
 import { canonicalJson } from '@/domain/backup/canonical-json';
+import { checkBackupClock } from '@/domain/backup/clock';
 import { backupChecksum, BACKUP_VERSION } from '@/domain/backup/format';
 import { sha256Hex } from '@/domain/backup/sha256';
 import { DRAFT_TRAINING_PROFILE } from '@/domain/training/profile';
 import { AvciService } from '@/services/avci-service';
-import { BackupService } from '@/services/backup-service';
+import { BackupService, emptyBackupData } from '@/services/backup-service';
 
 import { backends, FakeClock, goodCheckin } from './helpers';
 
@@ -63,6 +64,45 @@ function tamper(json: string, edit: (data: BackupData) => void, fixChecksum = tr
   if (fixChecksum) env.checksum = backupChecksum(env.data);
   return JSON.stringify(env);
 }
+
+describe('backup vs device clock (pure)', () => {
+  const day = (over: Partial<BackupData['taskDays'][number]>) =>
+    ({
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', sequence: 1, localDate: '2026-11-09', timezone: 'Europe/Istanbul',
+      openedAt: '2026-11-09T05:00:00.000Z', closedAt: null, multiplierHalves: 2, lastSeenAt: '2026-11-09T05:00:00.000Z', ...over,
+    }) as BackupData['taskDays'][number];
+  const data = (...taskDays: BackupData['taskDays']) => ({ ...emptyBackupData(), taskDays });
+  const at = (iso: string) => new Date(iso);
+
+  it('accepts a backup whose latest day is not ahead of the clock (tolerance included)', () => {
+    expect(checkBackupClock(data(), at('2020-01-01T00:00:00Z'))).toEqual([]);
+    expect(checkBackupClock(data(day({})), at('2026-11-09T05:00:00Z'))).toEqual([]);
+    // 4 minutes behind the high-water mark: inside the 5 minute tolerance the task-day rule uses.
+    expect(checkBackupClock(data(day({})), at('2026-11-09T04:56:00Z'))).toEqual([]);
+  });
+
+  it('refuses when the clock is behind the high-water mark beyond the tolerance', () => {
+    const issues = checkBackupClock(data(day({})), at('2026-11-09T04:54:00Z'));
+    expect(issues.map((x) => [x.code, x.path])).toEqual([['clock', 'taskDays[0].lastSeenAt']]);
+  });
+
+  it('refuses a latest day dated after "now" in that day\'s own timezone, even with an old lastSeenAt', () => {
+    const issues = checkBackupClock(data(day({ localDate: '2026-11-11' })), at('2026-11-09T12:00:00Z'));
+    expect(issues.map((x) => [x.code, x.path])).toEqual([['clock', 'taskDays[0].localDate']]);
+  });
+
+  it('judges the date in the day\'s captured timezone, so a backup made further east is not refused after travel', () => {
+    // Opened 2026-11-10 00:30 in Tokyo = 2026-11-09 15:30 UTC; it is still the 9th in Istanbul.
+    const tokyo = day({ localDate: '2026-11-10', timezone: 'Asia/Tokyo', openedAt: '2026-11-09T15:30:00.000Z', lastSeenAt: '2026-11-09T15:30:00.000Z' });
+    expect(checkBackupClock(data(tokyo), at('2026-11-09T15:31:00Z'))).toEqual([]);
+  });
+
+  it('only the latest day (highest sequence) is compared', () => {
+    const old = day({ lastSeenAt: '2026-11-09T20:00:00.000Z' });
+    const latest = day({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2', sequence: 2, localDate: '2026-11-10', openedAt: '2026-11-10T05:00:00.000Z', lastSeenAt: '2026-11-10T05:00:00.000Z' });
+    expect(checkBackupClock(data(old, latest), at('2026-11-10T05:00:00Z'))).toEqual([]);
+  });
+});
 
 describe('backup primitives', () => {
   it('sha256 matches known vectors; canonical JSON ignores key order', () => {
@@ -190,6 +230,67 @@ describe.each(backends)('backup service ($name)', (backend) => {
     expect((await backup.importBackup(text)).status).toBe('rejected');
     expect(norm(await dump(repo))).toBe(before);
     expect((await service.loadToday()).progress.totalXp).toBe(110);
+  });
+
+  it('REGRESSION: an accepted file must leave the app able to open (day/week order follows sequence)', async () => {
+    const service = await seed(repo, clock);
+    const { json } = await backup.exportBackup();
+    const before = norm(await dump(repo));
+    const cases: Record<string, (d: BackupData) => void> = {
+      'later task day with an earlier date': (d) => {
+        const day = d.taskDays[0];
+        d.taskDays.push({ ...day, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', sequence: 99, localDate: '2026-11-01' });
+        for (const sl of d.slots.filter((x) => x.taskDayId === day.id)) {
+          d.slots.push({ ...sl, taskDayId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', status: 'open', completedAt: null, resolution: null, workoutSessionId: null });
+        }
+      },
+      'later weekly cycle with an earlier week': (d) => {
+        const c = d.weeklyCycles[0];
+        d.weeklyCycles.push({ ...c, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', sequence: 99, weekStart: '2026-11-02', weekEnd: '2026-11-08' });
+      },
+      'weekly cycle that starts after the latest task day (the week would never change again)': (d) => {
+        const c = d.weeklyCycles[0];
+        d.weeklyCycles.push({ ...c, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', sequence: 99, weekStart: '2027-03-01', weekEnd: '2027-03-07' });
+      },
+    };
+    for (const [name, edit] of Object.entries(cases)) {
+      const text = tamper(json, edit);
+      const r = await backup.importBackup(text);
+      // Either the file is refused, or the app must still open afterwards. Refusal is the rule.
+      expect(r.status, name).toBe('rejected');
+      expect(norm(await dump(repo)), name).toBe(before);
+      await expect(service.loadToday(), name).resolves.toBeTruthy();
+    }
+  });
+
+  it('REGRESSION: a backup from the future is refused (it would freeze rewards or pin "today" for good)', async () => {
+    const service = await seed(repo, clock);
+    const { json } = await backup.exportBackup();
+    const before = norm(await dump(repo));
+    const refused = async (name: string, text: string) => {
+      const preview = await backup.previewImport(text);
+      expect(preview.ok, name).toBe(false);
+      if (!preview.ok) {
+        expect(preview.errors[0].code, name).toBe('clock');
+        expect(preview.errors[0].message, name).toMatch(/saat|gelecek/i);
+      }
+      expect((await backup.importBackup(text)).status, name).toBe('rejected');
+      expect(norm(await dump(repo)), name).toBe(before);
+    };
+    await refused(
+      'lastSeenAt far ahead of the device clock',
+      tamper(json, (d) => void (d.taskDays[0].lastSeenAt = '2099-01-01T00:00:00.000Z')),
+    );
+    // The untouched file on a device whose clock is a day behind the backup's latest day.
+    const exportedAtClock = clock.now().toISOString();
+    clock.set('2026-11-08T06:00:00Z');
+    await refused('device clock a day behind the backup', json);
+    // With the clock back where it was (or later) the same file restores fine.
+    clock.set(exportedAtClock);
+    expect((await backup.previewImport(json)).ok).toBe(true);
+    clock.set('2026-11-09T09:00:00Z');
+    expect((await backup.importBackup(json)).status).toBe('restored');
+    expect((await service.loadToday()).rewardsFrozen).toBe(false);
   });
 
   it('REGRESSION: quests and XP must agree in both directions; inconsistent files are rejected, nothing is repaired', async () => {

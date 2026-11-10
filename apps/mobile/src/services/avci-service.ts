@@ -42,6 +42,7 @@ import {
   validateIncrement,
   type ProgressionDecision,
   type SessionEvidence,
+  type LoadPrescription,
 } from '@/domain/training/progression';
 import { isClockRollback, validateRestDuration } from '@/domain/training/rest';
 import {
@@ -896,6 +897,19 @@ export class AvciService {
       // Today's readiness blocks acceptance but does not invalidate the evidence.
       if (fresh && isReadinessHold(fresh)) return { status: 'rejected', reason: 'readiness-blocked' };
       if (!fresh || fresh.kind !== 'increase' || `${fresh.evidenceKey}@${plan.id}` !== baseKey(proposal.evidenceKey)) return stale();
+      // The stored numbers are only applied when the deterministic rules produce exactly the same
+      // ones now (a restored or otherwise altered record cannot carry its own target into the plan).
+      const same = (x: LoadPrescription, y: LoadPrescription) =>
+        x.load === y.load && x.unit === y.unit && x.convention === y.convention && x.sets === y.sets && x.repMin === y.repMin && x.repMax === y.repMax;
+      if (
+        !same(fresh.before, proposal.before) ||
+        !same(fresh.after, proposal.after) ||
+        fresh.increment.key !== proposal.increment.key ||
+        fresh.increment.unit !== proposal.increment.unit ||
+        fresh.increment.value !== proposal.increment.value
+      ) {
+        return stale();
+      }
       const b = proposal.before;
       const program: Program = structuredClone(plan.program);
       for (const d of program.days) {

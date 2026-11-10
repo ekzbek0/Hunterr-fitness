@@ -105,6 +105,34 @@ describe('SQLite v2 (M1) -> v3 (M2)', () => {
   });
 });
 
+describe('SQLite v3 (M2) -> v4 (M3) failure', () => {
+  let dir = '';
+  beforeEach(() => void (dir = mkdtempSync(join(tmpdir(), 'avci-mig4-'))));
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('a failing v4 migration rolls back completely and leaves v3 data readable; a later open succeeds', async () => {
+    const path = join(dir, 'avci.db');
+    const d = nodeSqliteDriver(path);
+    await d.exec('CREATE TABLE app_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);');
+    for (const m of MIGRATIONS.slice(0, 3)) await d.exec(m.sql);
+    await d.run("INSERT INTO app_meta VALUES ('schema_version', '3')");
+    await d.run('INSERT INTO profile VALUES (?, ?, 2, ?, ?, ?)', [PID, 'Europe/Istanbul', '["walk10","mobility"]', T0, T0]);
+    await d.exec('CREATE TABLE measurement (x TEXT);'); // collides with v4, after its ALTERs ran
+    await expect(createSqliteRepository(d, 'test')).rejects.toThrow();
+    expect((await d.first<{ value: string }>("SELECT value FROM app_meta WHERE key='schema_version'"))!.value).toBe('3');
+    const cols = (await d.all('PRAGMA table_info(workout_session)')).map((c) => (c as { name: string }).name);
+    expect(cols).not.toContain('rest_last_seen_at'); // the partial ALTER was rolled back
+    expect(await d.first("SELECT name FROM sqlite_master WHERE name = 'app_setting'")).toBeNull();
+    expect((await d.first<{ n: number }>('SELECT COUNT(*) AS n FROM profile'))!.n).toBe(1);
+    // Once the obstacle is gone the same database migrates and keeps its data.
+    await d.exec('DROP TABLE measurement;');
+    const repo = await createSqliteRepository(d, 'test');
+    expect((await repo.transaction((tx) => tx.getProfile()))!.id).toBe(PID);
+    expect(await repo.transaction((tx) => tx.listMeasurements())).toEqual([]);
+    await repo.close();
+  });
+});
+
 describe('IndexedDB document v2 (M1) -> v3 (M2)', () => {
   it('carries plans, moves, sessions and sets over unchanged', async () => {
     const factory = new IDBFactory();

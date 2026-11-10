@@ -52,10 +52,13 @@ export function restView(timer: RestTimer | null, nowMs: number, observedMaxMs: 
   if (!Number.isFinite(start) || !Number.isFinite(nowMs)) return { state: 'uncertain' };
   const seen = timer.lastSeenAt ? Date.parse(timer.lastSeenAt) : start;
   const high = Math.max(start, Number.isFinite(seen) ? seen : start, observedMaxMs ?? start);
+  const end = start + timer.durationS * 1000;
+  // Already seen finished: it stays finished, whatever the clock does afterwards.
+  if (high >= end) return { state: 'done' };
   if (nowMs < high - CLOCK_TOLERANCE_MS) return { state: 'uncertain' };
   // Within tolerance a slightly earlier reading is treated as the high-water mark (never longer).
   const effective = Math.max(nowMs, high);
-  const remaining = Math.ceil((start + timer.durationS * 1000 - effective) / 1000);
+  const remaining = Math.ceil((end - effective) / 1000);
   return remaining <= 0 ? { state: 'done' } : { state: 'running', remainingS: Math.min(remaining, timer.durationS) };
 }
 

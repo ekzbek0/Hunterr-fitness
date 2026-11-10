@@ -9,12 +9,15 @@
  *   single transaction that REPLACES all local data; any failure rolls back and
  *   the existing data stays untouched. Replacement semantics make a repeated
  *   import idempotent: XP equals the backup's ledger, never a sum.
+ * - A file whose latest day is ahead of this device's clock is refused too
+ *   (domain/backup/clock.ts): it would freeze rewards or pin "today".
  * - Delete-all cancels reminders FIRST (policy: if that fails nothing is
  *   deleted and the user can retry), then empties every table in one
  *   transaction. No hidden copy is kept and nothing is restored automatically.
  */
 import { LATEST_SCHEMA_VERSION } from '@/data/sqlite/migrations';
 import { DEFAULT_SETTINGS, type AvciRepository, type BackupData } from '@/data/types';
+import { checkBackupClock } from '@/domain/backup/clock';
 import { backupFileName, buildBackupEnvelope, parseBackupText, serializeBackup } from '@/domain/backup/format';
 import { summarizeBackup, type BackupSummary } from '@/domain/backup/summary';
 import { validateBackupData, type BackupIssue } from '@/domain/backup/validate';
@@ -108,6 +111,8 @@ export class BackupService {
   async previewImport(text: string): Promise<ImportPreview> {
     const parsed = parseBackupText(text);
     if (!parsed.ok) return parsed;
+    const ahead = checkBackupClock(parsed.envelope.data, this.clock.now());
+    if (ahead.length > 0) return { ok: false, errors: ahead, totalErrors: ahead.length };
     const current = await this.repo.transaction((tx) => tx.dumpAll());
     return {
       ok: true,
@@ -131,6 +136,8 @@ export class BackupService {
     const parsed = parseBackupText(text);
     if (!parsed.ok) return { status: 'rejected', errors: parsed.errors, totalErrors: parsed.totalErrors };
     const data = parsed.envelope.data;
+    const ahead = checkBackupClock(data, this.clock.now());
+    if (ahead.length > 0) return { status: 'rejected', errors: ahead, totalErrors: ahead.length };
     const expected = summarizeBackup(data);
     try {
       await this.repo.transaction(async (tx) => {

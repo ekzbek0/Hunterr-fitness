@@ -36,7 +36,8 @@ export type BackupIssueCode =
   | 'structure'
   | 'value'
   | 'duplicate'
-  | 'reference';
+  | 'reference'
+  | 'clock';
 
 export interface BackupIssue {
   code: BackupIssueCode;
@@ -633,6 +634,27 @@ function checkIntegrity(out: IssueList, d: BackupData) {
   );
 
   const ref = (path: string, message: string) => out.add('reference', path, `${path}: ${message}.`);
+
+  // The app treats the highest sequence as "the latest day/week". A later
+  // sequence with an earlier date would make it re-open a date that already
+  // exists, and the app could no longer start.
+  const ordered = <T extends { sequence: number }>(rows: readonly T[], path: string, date: (x: T) => string, label: string) => {
+    const sorted = rows.map((x, i) => ({ x, i })).sort((a, b) => a.x.sequence - b.x.sequence);
+    for (let k = 1; k < sorted.length; k++) {
+      if (date(sorted[k].x) <= date(sorted[k - 1].x)) {
+        ref(`${path}[${sorted[k].i}].sequence`, `sıra numarası ilerlerken ${label} geriye gidiyor`);
+      }
+    }
+  };
+  ordered(d.taskDays, 'taskDays', (x) => x.localDate, 'görev günü tarihi');
+  ordered(d.weeklyCycles, 'weeklyCycles', (x) => x.weekStart, 'hafta başlangıcı');
+  // A week is opened from a task day, so no week can start after the latest day.
+  // If one did, the app would keep that week for good ("keep-latest").
+  const lastDate = d.taskDays.reduce((m, x) => (x.localDate > m ? x.localDate : m), '');
+  d.weeklyCycles.forEach((c, i) => {
+    if (c.weekStart > lastDate) ref(`weeklyCycles[${i}].weekStart`, 'hafta, kayıtlı son görev gününden sonra başlıyor');
+  });
+
   const days = new Map(d.taskDays.map((x) => [x.id, x]));
   const slots = new Map(d.slots.map((x) => [`${x.taskDayId}|${x.slotKey}`, x]));
   const sessions = new Map(d.sessions.map((x) => [x.id, x]));

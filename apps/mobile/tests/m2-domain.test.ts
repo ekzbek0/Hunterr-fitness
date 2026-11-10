@@ -271,6 +271,12 @@ describe('rest timer is derived from timestamps', () => {
     const seen: RestTimer = { ...t, lastSeenAt: '2026-11-09T07:01:00.000Z' };
     expect(restView(seen, at('2026-11-09T07:00:59.000Z'))).toEqual({ state: 'running', remainingS: 30 });
   });
+  it('REGRESSION: a rest that was already seen finished stays finished after a later clock rollback', () => {
+    const finished: RestTimer = { ...t, lastSeenAt: '2026-11-09T07:02:00.000Z' }; // seen at +120 s of a 90 s rest
+    expect(restView(finished, at('2026-11-09T07:01:00.000Z'))).toEqual({ state: 'done' });
+    expect(restView(t, at('2026-11-09T07:01:00.000Z'), at('2026-11-09T07:02:00.000Z'))).toEqual({ state: 'done' });
+    expect(isClockRollback(finished, at('2026-11-09T07:01:00.000Z'))).toBe(false);
+  });
   it('validates durations and formats', () => {
     expect(validateRestDuration(90)).toBe(90);
     for (const bad of [0, 14, 601, 1.5, Number.NaN]) expect(() => validateRestDuration(bad)).toThrow(RangeError);
