@@ -9,7 +9,7 @@ export const REMINDER_ID_PREFIX = 'avci-';
 export type ReminderPermission = 'granted' | 'denied' | 'undetermined' | 'unsupported';
 
 export interface ScheduledReminder {
-  /** Deterministic: `avci-<YYYY-MM-DD>-<HH:MM>`; the same day+time is never scheduled twice. */
+  /** Deterministic: `avci-<YYYY-MM-DD>-<HHMM>-<hash>`; one day+time is never scheduled twice. */
   id: string;
   /** Absolute fire instant (ISO, UTC). */
   fireAt: string;

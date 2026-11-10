@@ -6,7 +6,6 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { AvciProvider } from '@/ui/avci-context';
 import { C, MIN_TOUCH, S } from '@/ui/theme';
 
-// Gelişim tab arrives with M3; no nonfunctional tabs are shown.
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
@@ -22,6 +21,9 @@ export default function RootLayout() {
                 </TabTrigger>
                 <TabTrigger name="antrenman" href="/antrenman" asChild>
                   <TabButton>Antrenman</TabButton>
+                </TabTrigger>
+                <TabTrigger name="gelisim" href="/gelisim" asChild>
+                  <TabButton>Gelişim</TabButton>
                 </TabTrigger>
                 <TabTrigger name="karakter" href="/karakter" asChild>
                   <TabButton>Karakter</TabButton>

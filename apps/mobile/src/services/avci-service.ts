@@ -5,6 +5,7 @@
  */
 import { newId } from '@/data/ids';
 import type {
+  AppSettings,
   AvciRepository,
   DailyCheckin,
   LedgerEntry,
@@ -109,6 +110,8 @@ export interface TodaySnapshot {
   recentLedger: LedgerEntry[];
   recentDays: TaskDay[];
   storageKind: string;
+  /** M3 local preferences (speech, reminders). */
+  settings: AppSettings;
   /** Today's planned workout (if a program exists) and any unfinished workout. */
   training: { hasProgram: boolean; planned: PlannedSession | null; activeSession: WorkoutSession | null };
 }
@@ -255,6 +258,15 @@ export class AvciService {
     });
   }
 
+  /** M3: read-aloud on/off (a local preference; never affects training or XP). */
+  async setSpeechEnabled(enabled: boolean): Promise<AppSettings> {
+    return this.repo.transaction(async (tx) => {
+      const next = { ...(await tx.getSettings()), speechEnabled: enabled };
+      await tx.putSettings(next);
+      return next;
+    });
+  }
+
   /** Opens/resumes today (closing a finished day once) and returns the view. */
   async loadToday(): Promise<TodaySnapshot> {
     return this.repo.transaction(async (tx) => {
@@ -280,6 +292,7 @@ export class AvciService {
         recentLedger: ledger.slice(0, 20),
         recentDays: profile ? await tx.listTaskDays(14) : [],
         storageKind: this.repo.kind,
+        settings: await tx.getSettings(),
         training: await this.todayTraining(tx, today),
       };
     });

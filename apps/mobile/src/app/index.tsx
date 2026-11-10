@@ -5,9 +5,11 @@ import { Text, View } from 'react-native';
 import type { QuestSlot } from '@/data/types';
 import { awardedXp, multiplierLabel, type MultiplierHalves } from '@/domain/game/economy';
 import { DEFAULT_HABIT_KEYS, HABIT_CATALOG, SLOT_KEYS, type CoreResolution } from '@/domain/game/quests';
+import { questsSpeech } from '@/domain/speech/text';
 import type { CheckinInput, CoreSuggestion, TriState } from '@/domain/training/readiness';
 import type { CompletionResult, TodaySnapshot } from '@/services/avci-service';
 import { useAvci } from '@/ui/avci-context';
+import { SpeakButton } from '@/ui/speak-button';
 import { Button, Card, Chip, Screen, StorageGate, T, XpBar } from '@/ui/components';
 import { formatDate, RANK_TITLES, REASON_LABELS, RESOLUTION_LABELS } from '@/ui/labels';
 import { C } from '@/ui/theme';
@@ -79,6 +81,15 @@ function Today() {
           {progress.nextLevelXp !== null ? ` · sonraki seviye ${progress.nextLevelXp} XP` : ''} · bugün {snapshot.todayXp} XP
         </Text>
       </Card>
+
+      <SpeakButton
+        label="Görevleri sesli oku"
+        testID="speak-quests"
+        text={questsSpeech(
+          slots.map((s) => ({ title: s.title, done: s.status === 'completed' })),
+          snapshot.training.planned?.title ?? null,
+        )}
+      />
 
       {rewardsFrozen && (
         <Card accent={C.warning}>

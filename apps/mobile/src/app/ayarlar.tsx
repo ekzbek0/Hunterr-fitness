@@ -6,6 +6,7 @@ import { Text, View } from 'react-native';
 import { MULTIPLIER_HALVES, multiplierLabel, type MultiplierHalves } from '@/domain/game/economy';
 import { HABIT_CATALOG } from '@/domain/game/quests';
 import { useAvci } from '@/ui/avci-context';
+import { ReminderSettings, SpeechSettings } from '@/ui/settings/m3-settings';
 import { Button, Card, Chip, Screen, StorageGate, T } from '@/ui/components';
 import { C } from '@/ui/theme';
 
@@ -22,11 +23,14 @@ function Settings() {
   const [saved, setSaved] = useState<string | null>(null);
   const profile = snapshot?.profile;
   if (!profile) {
+    // Restore must work on a fresh install, so the data section is always reachable.
     return (
       <Screen title="Ayarlar">
         <Card>
-          <Text style={T.body}>Ayarlar, profilini oluşturduktan sonra açılır.</Text>
+          <Text style={T.body}>Oyun ayarları profilini oluşturduktan sonra açılır. Bir yedeğin varsa aşağıdan geri yükleyebilirsin.</Text>
         </Card>
+        <SpeechSettings />
+        <DataSection />
       </Screen>
     );
   }
@@ -82,12 +86,21 @@ function SettingsForm({
         }}
       />
       {saved && <Text style={[T.body, { color: C.success }]}>{saved}</Text>}
-      <Card>
-        <Text style={T.h3}>Veri</Text>
-        <Text style={T.muted}>Depolama: {snapshot?.storageKind}</Text>
-        <Text style={T.muted}>Gün sınırı için saat dilimi: {snapshot?.today?.timezone ?? profile.timezone}</Text>
-        <Text style={T.muted}>Dışa aktarma, geri yükleme ve silme M3 aşamasında eklenecek.</Text>
-      </Card>
+      <SpeechSettings />
+      <ReminderSettings />
+      <DataSection timezone={snapshot?.today?.timezone ?? profile.timezone} />
     </Screen>
+  );
+}
+
+function DataSection({ timezone }: { timezone?: string }) {
+  const { snapshot } = useAvci();
+  return (
+    <Card>
+      <Text style={T.h3}>Veri</Text>
+      <Text style={T.muted}>Depolama: {snapshot?.storageKind}</Text>
+      {timezone && <Text style={T.muted}>Gün sınırı için saat dilimi: {timezone}</Text>}
+      <Text style={T.muted}>Yedekleme ve geri yükleme M3 kapsamında ekleniyor.</Text>
+    </Card>
   );
 }

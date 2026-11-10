@@ -99,5 +99,34 @@
 - 2026-11-09: Migration 3 / belge v3 yalnız ekleyicidir; M0/M1 satırları aynen kalır, hata
   olursa v2 korunur (tests/m2-migration.test.ts).
 
+- 2026-11-09 (M3 öncesi düzeltme): Dinlenme sayacı saat politikası. Saklanan: başlangıç,
+  süre, `rest_last_seen_at` (sayaç çalışırken görülen en yüksek saat okuması; ekranda her 5 sn
+  ve arka plana geçişte, ayrıca Antrenman yüklenirken yazılır) ve `rest_uncertain`. Saat,
+  başlangıçtan veya bu en yüksek okumadan 2 sn'den fazla geride görülürse geçen süre
+  bilinemez: sayaç kalıcı olarak "belirsiz" olur, kalan süre gösterilmez (asla uzamaz), yeniden
+  açılışta da aynı görünür; kullanıcı yeniden başlatır veya kapatır. Tolerans içindeki geri
+  okuma en yüksek okuma sayılır (süre yine uzamaz). Kalan risk: uygulama kapalıyken saat,
+  son kayıttan sonraki ~5 sn + 2 sn tolerans içinde geri alınırsa fark edilemez; bu durumda
+  bile gösterilen süre en fazla bu kadar uzun olabilir. Doğrulama: tests/m2-domain.test.ts,
+  tests/m2-service.test.ts (iki depo, yeniden başlatma), e2e/web-m3.mjs.
+- 2026-11-09: Yerel hatırlatıcılar tamamen cihazda (expo-notifications, yalnız yerel; push
+  yetkisi `enableRemoteNotifications: false`, sunucu/hesap yok). Saf `planReminders` önümüzdeki
+  7 gün × seçilen saatler (en fazla 3) için deterministik kimlik `avci-<tarih>-<SSDD>-<özet>`
+  üretir; özet tetik anı + metni kapsar. Uzlaştırma `avci-` önekli fazlalıkları iptal eder,
+  eksikleri planlar, diğer bildirimlere dokunmaz; her yeniden yüklemede (açılış, ön plan, her
+  değişiklik) çalışır ve sıralıdır, böylece saat/program/taşıma/gün değişiminde çift kayıt
+  oluşmaz. Günün ana görevi tamamlandıysa o günün hatırlatıcısı kalkar. İzin yalnız
+  kullanıcı açtığında ve izin "belirsiz"ken bir kez istenir; reddedilirse seçim saklanır,
+  hiçbir şey planlanmaz, uygulama normal çalışır ve iOS Ayarlar yolu gösterilir. Web'de
+  zamanlayıcı "desteklenmiyor" döner ve arayüz bunu açıkça yazar. DST boşluğundaki saat atlanır.
+- 2026-11-09: Sesli okuma yalnız kullanıcı düğmeye bastığında (Bugün görevleri, hareketin
+  "Nasıl yapılır" metni), "Durdur" hemen keser, aynı anda tek okuma. Mikrofon/dinleme yok.
+  Ayarlar'da kapatılabilir (kapalıyken düğmeler gizlenir). Yalnız Türkçe ses varsa okunur;
+  yoksa veya motor yoksa metin ekranda kalır ve nedeni yazılır (yanlış dilde okuma yapılmaz).
+- 2026-11-09: iPhone hazırlığı: `expo-dev-client` + `eas.json` (`development` cihaz,
+  `development-simulator`, `preview`; hepsi internal). `owner`, `extra.eas.projectId` ve
+  `ios.bundleIdentifier` bilinçli olarak YOK: hesap ve paket kimliği kullanıcının kararıdır,
+  uydurulmaz. `submit` profili yok (mağaza gönderimi yetkili değil).
+
 Record implementation choices here with reason and validation, including
 task-day travel policy, persistence adapter, versions, and sync conflict policy.

@@ -49,6 +49,32 @@ Apple Developer is USD99/year, local price at enrollment. TestFlight build
 expiry is 90 days. Development/ad hoc provisioning also needs maintenance.
 Long-term store distribution needs Apple's current review/privacy requirements.
 
+### iPhone development build: remaining concrete steps (user's account required)
+The repo is prepared (`apps/mobile/eas.json`, `expo-dev-client`, local-only
+`expo-notifications` plugin). Nothing below has been run from this repo; no
+account, project ID, bundle ID or signing identity is stored. Run in `apps/mobile`:
+1. `npx eas-cli@latest login` (your Expo account; free tier is enough for builds
+   in the queue). Optionally `npx expo install --check` and `npx expo-doctor`.
+2. `npx eas-cli@latest init` — creates the EAS project and writes
+   `extra.eas.projectId` (and `owner`) into `app.json`; commit that change.
+3. Choose your own reverse-DNS bundle ID and add `"ios": { "bundleIdentifier": "..." }`
+   to `app.json` (it must be unique and registered to your Apple team).
+4. A physical iPhone install needs a paid Apple Developer Program membership
+   (USD 99/year, your decision). Then `npx eas-cli@latest device:create`, open the
+   link on the iPhone and install the provisioning profile; on iOS 16+ enable
+   Settings › Privacy & Security › Developer Mode.
+5. `npx eas-cli@latest build --profile development --platform ios` — EAS asks for
+   your Apple ID and manages certificates/profiles. Install from the build page.
+6. On the computer: `npx expo start --dev-client`, open the app on the iPhone.
+   Without a paid membership, `--profile development-simulator` builds for the iOS
+   Simulator only (needs a Mac to run).
+7. Real-device checklist (none done yet): SQLite migration 4 on existing data,
+   rest timer after background/kill and after changing the clock back, notification
+   permission allow/deny, reminder delivery at the chosen time and update after a
+   program change, Turkish voice present/absent, backup share sheet + Files import,
+   delete-all removes pending reminders, airplane mode.
+No `submit` profile exists; store submission is out of scope.
+
 ## Updates and background
 EAS Update requires runtime compatibility. New native dependencies, SDK,
 permissions/capabilities need a new binary. Configure dev/preview/production

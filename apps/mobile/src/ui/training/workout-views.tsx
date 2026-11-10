@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, Text, View } from 'react-native';
 
 import type { SetLog, WorkoutSession } from '@/data/types';
+import { exerciseSpeech } from '@/domain/speech/text';
 import { exerciseById } from '@/domain/training/catalog';
 import type { LoadTarget } from '@/domain/training/program';
 import { CLOCK_TOLERANCE_MS, formatRest, REST_PRESETS_S, restView, type RestTimer as RestTimerState } from '@/domain/training/rest';
@@ -11,6 +12,7 @@ import { parseDecimal, type LoadUnit, type SetInput, type SetKind } from '@/doma
 import type { ActiveWorkout } from '@/services/avci-service';
 import { Button, Card, Chip, Field, T } from '@/ui/components';
 import { exerciseName, formatDate, LOAD_CONVENTION_LABELS, loadText, prescriptionText, WEEKDAY_SHORT } from '@/ui/labels';
+import { SpeakButton } from '@/ui/speak-button';
 import { C } from '@/ui/theme';
 
 const STATE_LABELS: Record<PlannedSession['state'], string> = {
@@ -355,7 +357,16 @@ export function WorkoutLogger({
             )}
             <Button label={howTo === p.exerciseId ? 'Nasıl yapılır (gizle)' : 'Nasıl yapılır'} variant="secondary"
               onPress={() => setHowTo(howTo === p.exerciseId ? null : p.exerciseId)} />
-            {howTo === p.exerciseId && ex && <Text style={T.body}>{ex.howTo}</Text>}
+            {howTo === p.exerciseId && ex && (
+              <>
+                <Text style={T.body}>{ex.howTo}</Text>
+                <SpeakButton
+                  label="Sesli oku"
+                  testID="speak-howto"
+                  text={exerciseSpeech(exerciseName(p.exerciseId), prescriptionText(p), ex.howTo)}
+                />
+              </>
+            )}
             {logged.map((s, i) => (
               <View key={s.id} style={[T.row, { justifyContent: 'space-between' }]} testID="set-row">
                 <Text style={[T.body, { flex: 1, minWidth: 180, color: s.kind === 'warmup' ? C.textMuted : C.text }]}>
