@@ -1,6 +1,25 @@
 # Current progress
 
 ## Status
+
+## 2026-11-10 / Kurtarma düzeltmesinin ayrı incelemesi
+
+- Uzak ref'ler yeniden doğrulandı: Claude devam dalı `4ec91f4`, kurtarma PR dalı
+  `aa272ae`; daha yeni Claude dalı yok. `aa272ae` ile önceki yerel `26aece7`
+  aynı dosya ağacıdır (`git diff --quiet` temiz).
+- Düzeltmeyi yazmayan ayrı inceleme ajanı `4ec91f4..26aece7` farkını,
+  kabul ölçütlerini, servis/UI, regresyon testleri ve CI izinlerini okudu.
+  Müdahale gerektiren bulgu bildirmedi. Bu dar kurtarma düzeltmesinin ayrı kod
+  incelemesi tamamlandı; genel native kabul veya M5 onayı değildir.
+- İnceleyenin gerçekten çalıştırdığı kontroller: yedek/kurtarma odaklı
+  33/33 test, typecheck ve lint geçti. Tarayıcı akışları tekrar çalıştırılmadı;
+  önceki commit'e ait altı akış kanıtı korunur. Native test yapılmadı.
+- Bağlı tarayıcı yine `Unknown tool browser.js` verdi. Claude'a mesaj
+  gönderilmedi; çalışan iş ve Superpowers oturum kullanımı doğrulanmadı.
+  Aynı erişim engeli için kullanıcıdan yeniden işlem istenmedi.
+- PR çalışma dalında korunur; main'e birleştirme, dağıtım, hesap/imza veya
+  ücretli hizmet işlemi yok. Claude dalına aktarım ve gerçek cihaz kayıtları bekliyor.
+
 Son doğrulama (2026-11-10): `bbe43f7` için GitHub Actions temiz ortamında
 357 test, typecheck, lint, web export ve **altı Chromium kabul akışı GEÇTİ**.
 Kaynak: https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42793877759
