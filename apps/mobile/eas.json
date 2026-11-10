@@ -7,14 +7,23 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "ios": { "simulator": false }
+      "ios": {
+        "simulator": false
+      }
     },
     "development-simulator": {
       "extends": "development",
-      "ios": { "simulator": true }
+      "ios": {
+        "simulator": true
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "developmentClient": false,
+      "ios": {
+        "buildConfiguration": "Release",
+        "simulator": false
+      }
     }
   }
 }
