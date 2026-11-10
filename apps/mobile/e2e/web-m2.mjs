@@ -208,7 +208,9 @@ try {
   check(await blockedCard.getByRole('button', { name: `Öneriyi kabul et: ${EX}` }).isDisabled(), 'blocked proposal cannot be accepted');
   await checkinToday(page);
   await tab(page, 'Antrenman');
-  await page.getByRole('button', { name: 'Haftalık değerlendirmeyi aç' }).click();
+  // Tab navigation preserves the open weekly screen. Its dataVersion effect
+  // refreshes proposals after check-in; there is no second open button here.
+  await page.getByTestId('weekly-summary').waitFor();
   const validCard = page.getByTestId('proposal-card').filter({ hasText: EX }).filter({ hasText: 'Karar bekliyor' });
   await validCard.getByTestId('proposal-after').waitFor();
   check((await validCard.getByTestId('proposal-after').innerText()).includes('62,5 kg'), 'after check-in only the fresh rule-made proposal is actionable');

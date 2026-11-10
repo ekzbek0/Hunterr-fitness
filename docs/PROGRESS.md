@@ -2,6 +2,25 @@
 
 ## Status
 
+## 2026-11-10 / Son web regresyonunun CI hatası ve dar düzeltmesi
+
+- Gerçek uzak ref listesinde en yeni Claude dalı hâlâ `cfd122b`; PR #1 başı `634adc3`.
+- GitHub Actions `42827699547`, iş `129869224126` ham günlükleri okundu: tür/lint,
+  362 test ve web export geçti. İlk iki web akışı geçti; M2, yeni güvenlik
+  denetimlerini geçtikten sonra satır 211'de olmayan açma düğmesini bekleyerek durdu.
+  Sonraki üç akış bu işte çalışmadı; tüm altı geçti denemez.
+- Kaynak nedeni: sekme değişimi açık haftalık ekranın `mode` durumunu koruyor;
+  kontrol kaydı sonrası `dataVersion` etkisi aynı ekranın önerilerini yeniden okuyor.
+  Test artık ikinci kez açma düğmesine basmak yerine haftalık özeti ve taze
+  öneriyi bekliyor. Gizlenen 500 yükü, kapalı kabul, taze 62,5 kg ve açık onay
+  denetimleri korunuyor; ürün kodu değişmedi.
+- Bu ağaçta `node --check`, typecheck, lint, iki depoda 362/362 test ve web export
+  çalıştırıldı ve geçti. Yeni tam tarayıcı sonucu CI'da doğrulanmayı bekliyor.
+- Browser bağlantısı yine `Unknown tool browser.js`; Claude'a doğrudan ileti yok.
+  Önceden bildirilen engel tekrarlanmadı. Superpowers canlı kullanım doğrulaması yok.
+  M5 gerçek cihaz/imza adımları bekliyor; native test veya dağıtım yapılmadı.
+
+
 ## 2026-11-10 / Kontrol engelinde doğrulanmamış yük önizlemesi
 
 - `33043fb` için temiz GitHub Actions işi `42826440910` tamamlandı; ham günlüklerden
