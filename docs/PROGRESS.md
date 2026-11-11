@@ -2,6 +2,36 @@
 
 ## Status
 
+## 2026-11-11 / Yedekleme hata metninde dosya yolu gizliliği (C4)
+
+- Uzak ref listesi tekrar okundu: Claude devam dalı `claude/project-thread-odi8ww`
+  hâlâ `cfd122b`; inceleme başlangıcında PR dalı `907d724`.
+- Önceki dosya hazırlama düzeltmesinin CI kanıtı doğrulandı:
+  [42982177139](https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42982177139),
+  iş `130394892542` ham günlükleri checkout `907d72490d94602b739aaa436561436d95316873`,
+  367/367 test, typecheck, lint, web export ve altı Chromium PASS sonucu içeriyor.
+- Bağımsız gizlilik incelemesi C4'ü doğruladı: native paylaşım/okuma hataları, dosya
+  seçici ve paylaşılabilirlik denetimi hataları `BackupPanel.run` üzerinden ham
+  `Error.message` / `String(e)` ile ekranda görünebiliyordu (özel cihaz yolu dahil).
+- Dar düzeltme `ui/backup-errors.ts` sunum sınırıdır. Yalnız `BackupFileError` içinde
+  uygulamanın üç sabit eyleme dönük metni (büyük dosya, okunamayan dosya, paylaşım yok)
+  aynen gösterilir; diğer hatalar ve atılan bilinmeyen değerler sabit Türkçe mesaj olur.
+  Temizlenemeyen geçici kopya uyarısı korunur. Ham hata kaydedilmez veya string'e çevrilmez.
+- Genel hata metni "veriler değişmedi" demez: `afterChange` geri yükleme/silme zaten
+  kaydedildikten sonra hata verebilir. Servisin sabit ret/başarısızlık mesajları korunur.
+- Ham görüntüleme ifadesine karşı sekiz regresyon gerçekten kırmızı görüldü; düzeltme
+  sonrası hepsi yeşil. Sentetik yol, ham payload, string'e dönüşümü hata atan nesne,
+  temizlik uyarısı ve üç bilinen mesaj sınanıyor.
+- Typecheck, lint, **375/375 test** (20 dosya), web export ve `node --check e2e/web-m3.mjs`
+  geçti. M3 web akışı sentetik `createObjectURL` hatası, ham yolun gizlenmesi, genel
+  mesaj ve sonraki normal indirme ile tekrar denemeyi içeriyor. Bu yeni web regresyonu
+  CI'da ayrıca doğrulanmalı; önceki yeşil iş bu yeni arayüzün kanıtı değildir.
+- Ayrı salt okunur son diff incelemesinde yeni kusur yok; inceleyici 21/21 odaklı
+  testi, typecheck, lint ve M3 sözdizimini gerçekten çalıştırdı. Tarayıcı çalıştırmadı.
+- Bağlı Browser aracı yine `Unknown tool browser.js`; Claude'a doğrudan mesaj
+  gönderilmedi, Superpowers canlı kullanım doğrulanmadı. Önceki engel tekrarlanmadı.
+- İmzalı build, gerçek iPhone ve Safari test bağlantısı henüz yok; M5 tamam değil.
+
 ## 2026-11-11 / Dosya hazırlama hatasında geçici kopyanın izlenmesi
 
 - Salt okunur bağımsız yaşam döngüsü incelemesi P2 doğruladı: native `createTemp`
@@ -291,7 +321,7 @@ Kalanların hepsi hesap veya cihaz ister; hiçbiri uydurulmadı:
   ve XP'yi karşılaştırıyor; dışa aktarma uyarısı 20 MB sınırını söylemiyor; tarihî kayıtlar
   güncel kataloglarla doğrulanıyor (altın dosya testi önerildi).
 - QA 5 kalıntısı: gözlenmeyen aralıkta küçük saat geri alma fark edilmez (DECISIONS.md).
-- Gizlilik C3 (cihaz/iCloud yedekleri) ve C4 (hata metninde dosya yolu).
+- Gizlilik C3 (cihaz/iCloud yedekleri) gerçek cihaz doğrulaması bekliyor; C4 hata görüntüleme sınırı 2026-11-11 düzeltildi (yukarıda).
 - Eklem ağrısında hareket bazlı otomatik duraklatma yok (yalnız uyarı ve artış durdurma).
 - Yedek dosyası şifrelenmez (arayüzde yazıyor).
 

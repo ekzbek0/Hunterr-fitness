@@ -254,3 +254,10 @@ task-day travel policy, persistence adapter, versions, and sync conflict policy.
   hataları da temizleme denemesine girer. Hata sırasında temizliği doğrulanamayan
   kopya için `tempCopyRemoved: false` korunur. Mock Expo sarmalayıcı testleri gerçek
   iPhone kanıtı değildir; SDK 58 FileSystem belgesiyle API sözleşmesi kontrol edildi.
+
+- 2026-11-11 (yedekleme hata sunumu / C4): Platform/depodan atılan ham hata metni ve
+  bilinmeyen değerler ekranda string'e çevrilmez. `BackupFileError` için yalnız tam
+  eşleşen üç sabit kullanıcı mesajı geçer; diğerleri genel Türkçe hata olur. Temizlik
+  belirsizliği ayrı `tempCopyRemoved` bayrağıyla korunur. Genel mesaj veri değişmedi
+  iddiası taşımaz: geri yükleme/silme sonrası ekran yenileme hatası yazımı geri almaz.
+  Bu değişiklik hata kaydı/telemetri eklemez ve dosyanın kendisini değiştirmez.

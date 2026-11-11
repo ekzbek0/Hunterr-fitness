@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { COUNT_LABELS } from '@/domain/backup/summary';
-import { BackupFileError, pickBackupFile, saveBackupFile, sweepBackupTemp, TEMP_LEFT_NOTICE } from '@/platform/backup-file';
+import { pickBackupFile, saveBackupFile, sweepBackupTemp, TEMP_LEFT_NOTICE } from '@/platform/backup-file';
 import type { BackupService, ImportPreview } from '@/services/backup-service';
+import { formatBackupError } from '@/ui/backup-errors';
 import { Button, Card, T } from '@/ui/components';
 import { formatDate } from '@/ui/labels';
 import { C } from '@/ui/theme';
@@ -32,8 +33,7 @@ export function BackupPanel({
     try {
       await fn();
     } catch (e) {
-      const left = e instanceof BackupFileError && !e.tempCopyRemoved ? ` ${TEMP_LEFT_NOTICE}` : '';
-      setMsg({ text: `${e instanceof Error ? e.message : String(e)}${left}`, tone: 'error' });
+      setMsg({ text: formatBackupError(e), tone: 'error' });
     } finally {
       setBusy(false);
     }
