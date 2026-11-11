@@ -41,9 +41,16 @@ export function saveBackupFile(fileName: string, json: string): Promise<SaveResu
       shareAvailable: () => Sharing.isAvailableAsync(),
       createTemp: (name) => {
         const file = new File(Paths.cache, name);
-        if (file.exists) file.delete();
-        file.create();
-        return temp(file);
+        // Return the owned handle before any filesystem mutation. The core can
+        // then clean up (or report failure) even if delete/create partially fails.
+        return {
+          ...temp(file),
+          write: async (text) => {
+            if (file.exists) file.delete();
+            file.create();
+            await file.write(text);
+          },
+        };
       },
       share: (uri) => Sharing.shareAsync(uri, { mimeType: 'application/json', UTI: 'public.json', dialogTitle: 'AVCI yedeğini kaydet' }),
     },

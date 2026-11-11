@@ -247,3 +247,10 @@ task-day travel policy, persistence adapter, versions, and sync conflict policy.
   yeni bir plan sürümü eskisini geçersiz kılmaz; en son plan şartı konmaz. Sağlaması doğru
   ama çapraz ilişkileri çelişkili dosya yazım öncesi tamamen reddedilir. İki depo regresyonu
   hem ret sonrası verinin değişmediğini hem sonraki meşru düzenleme yedeğini doğrular.
+
+- 2026-11-11 (geçici dosya hazırlama hatası): Native paylaşımda dosya tutamacı, dosya
+  sistemi değişmeden önce çekirdeğe teslim edilir. Var olan geçici kopyayı silme,
+  oluşturma ve yazma bu tutamacın izlenen `write` işlemi içindedir; böylece hazırlama
+  hataları da temizleme denemesine girer. Hata sırasında temizliği doğrulanamayan
+  kopya için `tempCopyRemoved: false` korunur. Mock Expo sarmalayıcı testleri gerçek
+  iPhone kanıtı değildir; SDK 58 FileSystem belgesiyle API sözleşmesi kontrol edildi.

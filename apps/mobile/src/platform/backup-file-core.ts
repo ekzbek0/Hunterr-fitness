@@ -72,7 +72,7 @@ const message = (e: unknown, fallback: string) => (e instanceof Error && e.messa
 export async function saveThroughShare(
   io: {
     shareAvailable(): Promise<boolean>;
-    /** Creates (or replaces) an empty file in the app cache. */
+    /** Returns an app-cache handle without filesystem mutation; write prepares/replaces the file. */
     createTemp(fileName: string): TempFile;
     share(uri: string): Promise<void>;
   },

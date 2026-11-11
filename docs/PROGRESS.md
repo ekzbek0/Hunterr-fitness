@@ -2,6 +2,29 @@
 
 ## Status
 
+## 2026-11-11 / Dosya hazırlama hatasında geçici kopyanın izlenmesi
+
+- Salt okunur bağımsız yaşam döngüsü incelemesi P2 doğruladı: native `createTemp`
+  eski kopyayı silip yenisini oluşturmadan dosya tutamacını döndürmüyordu. Silme veya
+  kısmi oluşturma hatasında çekirdeğin `file` değeri `null` kalıyor, temizlik sonucu
+  yanlışlıkla `true` oluyordu. Kopya kalabildiği hâlde arayüz uyarı vermeyebiliyordu.
+- SDK 58 FileSystem belgesi okundu: `File` var olmayan dosyaya da başvuru tutar;
+  oluşturma ayrı `create` işlemidir. Kaynak: https://docs.expo.dev/versions/v58.0.0/sdk/filesystem/
+- Düzeltme: önce yan etkisiz uygulama-önbelleği tutamacı döndürülür; silme/oluşturma/
+  yazma, çekirdeğin dosyayı izlediği `write` içinde yapılır. Başarısız silmede kalan
+  kopya dürüstçe bildirilir; kısmi oluşturmada temizleme denenir. Kullanıcı kopyasına
+  dokunulmaz, paylaşım hazırlama başarısızsa açılmaz.
+- `tests/native-backup-wrapper.test.ts` gerçek native sarmalayıcıyı sahte Expo IO ile
+  çağırır. Düzeltmeden önce üç testten ikisi gerçekten kırmızıydı: yanlış temizleme
+  bildirimi ve oluşturma hatasından sonra kalan dosya. Üçüncü test normal paylaşım,
+  eski geçici kopyanın değiştirilmesi ve dış kullanıcı kopyasının korunmasıdır.
+- Düzeltmeden sonra typecheck, lint ve **367/367 test** (19 dosya) geçti.
+  Web export da başarılı. Ayrı salt okunur son diff incelemesinde yeni kusur bulunmadı;
+  inceleyici 13/13 odaklı testi, typecheck ve lint gerçekten çalıştırdı.
+  Gerçek Expo dosya sistemi/paylaşım veya iPhone testi değildir.
+- Gizlilik C4 (ham hata metninde dosya yolu) ayrı ve hâlâ açık; bu dar düzeltme onun
+  çözüldüğünü iddia etmez. Yeni web kabulü CI'da ayrıca çalıştırılmalıdır.
+
 ## 2026-11-11 / Son öneri–plan düzeltmesinin tam web kabul kanıtı
 
 - Uzak ref'ler kontrol edildi: Claude devam dalı hâlâ `claude/project-thread-odi8ww`
