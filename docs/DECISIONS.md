@@ -261,3 +261,11 @@ task-day travel policy, persistence adapter, versions, and sync conflict policy.
   belirsizliği ayrı `tempCopyRemoved` bayrağıyla korunur. Genel mesaj veri değişmedi
   iddiası taşımaz: geri yükleme/silme sonrası ekran yenileme hatası yazımı geri almaz.
   Bu değişiklik hata kaydı/telemetri eklemez ve dosyanın kendisini değiştirmez.
+
+- 2026-11-11 (işlem içi geri okuma): Geri yükleme ve tümünü silme, sayım/XP özeti
+  yerine beklenen her alanı geri okunan içerikle karşılaştırır. Beklenen anlık içerik
+  yazımdan önce alınır; tabloların satır sırası ve nesne anahtar sırası normalize edilir,
+  iç dizilerin sırası ve tüm alan değerleri aynen korunur. Fark işlem içinde hata verir
+  ve yazım geri alınır. Gerekçe: aynı sayıda kayıt/XP ile hatalı yük/ayar veya silme
+  sonrasında kalan etkin hatırlatıcı ayarları eski özet denetiminden geçebiliyordu.
+  İki depo hata enjeksiyonu, rollback ve satır sırası uyumluluğu test edildi.

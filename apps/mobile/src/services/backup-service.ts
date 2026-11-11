@@ -17,6 +17,7 @@
  */
 import { LATEST_SCHEMA_VERSION } from '@/data/sqlite/migrations';
 import { DEFAULT_SETTINGS, type AvciRepository, type BackupData } from '@/data/types';
+import { canonicalJson } from '@/domain/backup/canonical-json';
 import { checkBackupClock } from '@/domain/backup/clock';
 import { backupFileName, buildBackupEnvelope, parseBackupText, serializeBackup } from '@/domain/backup/format';
 import { summarizeBackup, type BackupSummary } from '@/domain/backup/summary';
@@ -84,7 +85,12 @@ export function emptyBackupData(): BackupData {
   };
 }
 
-const sameSummary = (a: BackupSummary, b: BackupSummary) => JSON.stringify(a) === JSON.stringify(b);
+/** Table row order is adapter-specific; every stored field and nested array order is significant.
+ * Capture before replaceAll so an adapter cannot mutate the expected payload during writing.
+ */
+const backupContents = (data: BackupData): string => canonicalJson(Object.fromEntries(
+  Object.entries(data).map(([table, value]) => [table, Array.isArray(value) ? value.map(canonicalJson).sort() : value]),
+));
 
 export class BackupService {
   constructor(
@@ -149,12 +155,13 @@ export class BackupService {
     const ahead = checkBackupClock(data, this.clock.now());
     if (ahead.length > 0) return { status: 'rejected', errors: ahead, totalErrors: ahead.length };
     const expected = summarizeBackup(data);
+    const expectedContents = backupContents(data);
     try {
       await this.repo.transaction(async (tx) => {
         await tx.replaceAll(data);
-        // Read back inside the transaction: a silently skipped row (e.g. an ignored
-        // conflict) aborts the restore instead of committing partial data.
-        if (!sameSummary(summarizeBackup(await tx.dumpAll()), expected)) {
+        // Read back every field inside the transaction. Equal counts/XP alone
+        // cannot detect silently altered loads, prescriptions or settings.
+        if (backupContents(await tx.dumpAll()) !== expectedContents) {
           throw new Error('restore verification failed');
         }
       });
@@ -179,10 +186,11 @@ export class BackupService {
       };
     }
     const empty = emptyBackupData();
+    const expectedContents = backupContents(empty);
     try {
       await this.repo.transaction(async (tx) => {
         await tx.replaceAll(empty);
-        if (!sameSummary(summarizeBackup(await tx.dumpAll()), summarizeBackup(empty))) throw new Error('delete verification failed');
+        if (backupContents(await tx.dumpAll()) !== expectedContents) throw new Error('delete verification failed');
       });
     } catch {
       return { status: 'failed', stage: 'storage', message: 'Veriler silinemedi; kayıtların değiştirilmedi. Lütfen tekrar dene.' };

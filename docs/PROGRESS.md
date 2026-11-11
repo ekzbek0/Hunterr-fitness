@@ -2,6 +2,33 @@
 
 ## Status
 
+## 2026-11-11 / Geri yükleme ve silme sonrası tüm içeriğin doğrulanması
+
+- Uzak ref'ler okundu: en yeni Claude dalı `claude/project-thread-odi8ww` (`cfd122b`),
+  PR çalışma dalı inceleme başlangıcında `abff8cf`. Bağlı Browser aracı hâlâ
+  `Unknown tool browser.js`; Claude'a ileti veya Superpowers canlı kanıtı yok.
+- QA 6'daki geri okuma notu somut olarak doğrulandı: yalnız özet sayıları ve XP
+  karşılaştırılıyordu. İki gerçek depodaki işlem içine hata enjekte edilince değişmiş
+  set yükü/ayarlar/plan iç sırası başarı diye kabul edilebiliyordu; boşaltma sonrası
+  eski hatırlatıcı ayarları kalsa da silme başarı dönebiliyordu. Bu gerçek bir cihaz
+  arızası gözlemi değildir; doğrulama açığını gösteren denetimli hata enjeksiyonudur.
+- Dar düzeltme: beklenen tüm içerik yazımdan önce kanonik anlık metne alınır. İşlem
+  içindeki geri okuma bununla tam karşılaştırılır; farklıysa işlem geri alınır.
+  Yalnız tabloların üst düzey satır sırası ve nesne anahtar sırası önemsizdir. Program
+  gün/hareket sırası, alışkanlıklar, hatırlatıcılar ve diğer iç dizilerin sırası korunur.
+  Varsayılan/null onarımı yok; beklenen veri yazım sırasında değiştirilse bile önceki
+  anlık görüntü korunur. Aynı denetim `deleteAllData` içinde varsayılan ayarları da kapsar.
+- Kalıcı regresyonlar düzeltmeden önce iki depoda dört kırmızı verdi. Sonra değişmiş
+  yük, ayar ve iç hareket sırası reddi; ret sonrası önceki kayıtların aynılığı; ayarları
+  sıfırlamayan silmenin geri alınması; yalnız satır sırası değişince meşru geri yükleme
+  kabulü geçti. Mevcut dışa/içe aktarma ve migration regresyonları da korunuyor.
+- Typecheck, lint, **381/381 test** (20 dosya) ve web export geçti. Bu ağacın web kabulü
+  CI'da ayrıca doğrulanmalı; önceki C4 işi yeni servis değişikliğine kanıt sayılmaz.
+- Ayrı salt okunur son diff incelemesinde yeni kusur bulunmadı; inceleyici 41/41
+  odaklı testi, typecheck ve lint gerçekten çalıştırdı.
+- Gerçek iPhone, hesap/imza ve Safari test bağlantısı yok; M5 tamam değil. Main'e
+  birleştirme, yayımlama veya ücretli hizmet işlemi yapılmadı.
+
 ## 2026-11-11 / C4 düzeltmesinin tam web kabul sonucu
 
 - [Actions 42987597761](https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42987597761),
@@ -331,8 +358,7 @@ Kalanların hepsi hesap veya cihaz ister; hiçbiri uydurulmadı:
   DevTools aynı bağlantıyı kullanabilir; ROLLBACK da başarısız olursa sonraki işlemler yeniden
   başlatmaya kadar başarısız olur; hiç bitmeyen bir işlem tüm veritabanı erişimini bekletir.
 - QA 6: kabul edilmiş öneri ↔ plan çapraz denetimi 2026-11-11 düzeltildi (yukarıda); sıfır setli ödüllü bitmiş
-  seans kabul ediliyor; bilinmeyen `exerciseId`'li öneri kabul ediliyor; geri okuma yalnız sayı
-  ve XP'yi karşılaştırıyor; dışa aktarma uyarısı 20 MB sınırını söylemiyor; tarihî kayıtlar
+  seans kabul ediliyor; bilinmeyen `exerciseId`'li öneri kabul ediliyor; geri okuma 2026-11-11 tüm içerik karşılaştırmasına geçti (yukarıda); dışa aktarma uyarısı 20 MB sınırını söylemiyor; tarihî kayıtlar
   güncel kataloglarla doğrulanıyor (altın dosya testi önerildi).
 - QA 5 kalıntısı: gözlenmeyen aralıkta küçük saat geri alma fark edilmez (DECISIONS.md).
 - Gizlilik C3 (cihaz/iCloud yedekleri) gerçek cihaz doğrulaması bekliyor; C4 hata görüntüleme sınırı 2026-11-11 düzeltildi (yukarıda).
