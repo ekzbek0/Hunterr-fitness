@@ -22,8 +22,13 @@
   yük, ayar ve iç hareket sırası reddi; ret sonrası önceki kayıtların aynılığı; ayarları
   sıfırlamayan silmenin geri alınması; yalnız satır sırası değişince meşru geri yükleme
   kabulü geçti. Mevcut dışa/içe aktarma ve migration regresyonları da korunuyor.
-- Typecheck, lint, **381/381 test** (20 dosya) ve web export geçti. Bu ağacın web kabulü
-  CI'da ayrıca doğrulanmalı; önceki C4 işi yeni servis değişikliğine kanıt sayılmaz.
+- Typecheck, lint, **381/381 test** (20 dosya) ve web export geçti.
+- Son servis commit'i `ac2489d9bd85bcf9819e611f5c07deed14efeef9` için
+  [Actions 42997184234](https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42997184234),
+  iş `130444081328` ham günlükleri okundu: checkout SHA eşleşiyor, 381 test,
+  typecheck, lint, web export ve altı Chromium akışı geçti. Boş kurulumda ve
+  okunamayan depoda sağlam yedeği açık onayla geri yükleme de gerçekten başarılı.
+  Bu sonradan eklenen kanıt kaydı yalnız belgeyi değiştirir; uygulama ağacı aynıdır.
 - Ayrı salt okunur son diff incelemesinde yeni kusur bulunmadı; inceleyici 41/41
   odaklı testi, typecheck ve lint gerçekten çalıştırdı.
 - Gerçek iPhone, hesap/imza ve Safari test bağlantısı yok; M5 tamam değil. Main'e
