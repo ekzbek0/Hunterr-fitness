@@ -2,6 +2,20 @@
 
 ## Status
 
+## 2026-11-11 / C4 düzeltmesinin tam web kabul sonucu
+
+- [Actions 42987597761](https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42987597761),
+  iş `130412398557` tamamlandı. Ham günlüklerde checkout
+  `91515696df7064736d1796e505c435f293ebd0cb`, **375/375 test**, typecheck, lint,
+  web export ve altı Chromium PASS doğrulandı.
+- Yeni M3 denetimi gerçekten geçti: `backup failure hides raw platform path and
+  offers retry`; hemen ardından sürümlü yedek dosyası normal indirildi. Kullanıcı
+  tekrar deneyebiliyor, sentetik özel yol mesajda görünmüyor.
+- Bu kayıt yalnız belgedir; uygulama kodu CI'da test edilen commit ile aynı kaldı.
+  Aşağıdaki yeni C4 web regresyonu için bekleyen ifadeler bu kanıtla sonuçlandı.
+- Gerçek iPhone, imzalama ve canlı Claude/Superpowers erişimi doğrulanmadı.
+  M5 tamam değil; kalan QA kabul maddeleri ve Safari test bağlantısı açık.
+
 ## 2026-11-11 / Yedekleme hata metninde dosya yolu gizliliği (C4)
 
 - Uzak ref listesi tekrar okundu: Claude devam dalı `claude/project-thread-odi8ww`
