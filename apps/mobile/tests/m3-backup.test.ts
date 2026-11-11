@@ -368,6 +368,70 @@ describe.each(backends)('backup service ($name)', (backend) => {
     expect(today.slots.map((x) => x.slotKey).sort()).toEqual(['checkin', 'core', 'habit-1', 'habit-2']);
   });
 
+  it('REGRESSION: unchanged counts and XP cannot hide altered restore contents', async () => {
+    await seed(repo, clock);
+    const { json } = await backup.exportBackup();
+    await repo.transaction((tx) => tx.putSettings({ speechEnabled: true, reminders: { enabled: false, times: [] } }));
+    const before = norm(await dump(repo));
+    const mutations: ((d: BackupData) => void)[] = [
+      (d) => { d.sets[0].load += 1; },
+      (d) => { d.settings.speechEnabled = !d.settings.speechEnabled; },
+      (d) => { d.plans[0].program.days[0].exercises.reverse(); },
+    ];
+    for (const mutate of mutations) {
+      const faulty: AvciRepository = {
+        ...repo,
+        transaction: (fn) => repo.transaction((tx) => fn({
+          ...tx,
+          replaceAll: async (data) => {
+            const changed = structuredClone(data);
+            mutate(changed);
+            await tx.replaceAll(changed);
+          },
+        })),
+      };
+      expect((await new BackupService(faulty, clock).importBackup(json)).status).toBe('failed');
+      expect(norm(await dump(repo))).toBe(before);
+    }
+  });
+
+  it('REGRESSION: delete-all verifies settings reset as well as empty record counts', async () => {
+    await seed(repo, clock);
+    const before = norm(await dump(repo));
+    const faulty: AvciRepository = {
+      ...repo,
+      transaction: (fn) => repo.transaction((tx) => fn({
+        ...tx,
+        replaceAll: async (data) => {
+          await tx.replaceAll(data);
+          await tx.putSettings({ speechEnabled: false, reminders: { enabled: true, times: ['07:30'] } });
+        },
+      })),
+    };
+    expect(await new BackupService(faulty, clock).deleteAllData(async () => undefined))
+      .toMatchObject({ status: 'failed', stage: 'storage' });
+    expect(norm(await dump(repo))).toBe(before);
+  });
+
+  it('restore verification ignores table row order while preserving nested prescription order', async () => {
+    await seed(repo, clock);
+    const { json } = await backup.exportBackup();
+    const expected = norm(await dump(repo));
+    const shuffled: AvciRepository = {
+      ...repo,
+      transaction: (fn) => repo.transaction((tx) => fn({
+        ...tx,
+        dumpAll: async () => {
+          const d = await tx.dumpAll();
+          for (const rows of Object.values(d)) if (Array.isArray(rows)) rows.reverse();
+          return d;
+        },
+      })),
+    };
+    expect((await new BackupService(shuffled, clock).importBackup(json)).status).toBe('restored');
+    expect(norm(await dump(repo))).toBe(expected);
+  });
+
   it('a failure while writing rolls the whole restore back', async () => {
     await seed(repo, clock);
     const { json } = await backup.exportBackup();

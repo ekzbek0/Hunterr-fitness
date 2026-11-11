@@ -177,8 +177,45 @@ try {
   check((await page.getByTestId('proposal-after').innerText()).includes('62,5 kg'), 'preview shows after (62,5 kg)');
   check(await page.getByRole('button', { name: `Öneriyi kabul et: ${EX}` }).isDisabled(), 'acceptance needs technique confirmation');
   if (shots) await page.screenshot({ path: `${shots}/oneri.png`, fullPage: true });
-  await page.getByRole('checkbox', { name: 'Teknik ve hareket açıklığı iki seansta da aynıydı' }).click();
-  await page.getByRole('button', { name: `Öneriyi kabul et: ${EX}` }).click();
+  // A restored unchecked proposal must not advertise its stored target when
+  // today's check-in prevents revalidation. Real restore acceptance is exercised
+  // by the two-adapter diagnostic; here mutate only synthetic browser records.
+  await page.evaluate(() => new Promise((resolve, reject) => {
+    const open = indexedDB.open('avci', 1);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const tx = open.result.transaction('documents', 'readwrite');
+      const store = tx.objectStore('documents');
+      const get = store.get('main');
+      get.onsuccess = () => {
+        const stored = get.result;
+        const proposal = stored.doc.proposals.find((p) => p.exerciseId === 'bb-bench-press' && p.status === 'pending');
+        proposal.after.load = 500;
+        store.put(stored, 'main');
+      };
+      tx.oncomplete = () => (open.result.close(), resolve(null));
+      tx.onabort = () => (open.result.close(), reject(tx.error));
+    };
+  }));
+  await ctx.close();
+  ({ ctx, page, errors } = await launch(day('2026-11-15'))); // new day, no check-in
+  await tab(page, 'Antrenman');
+  await page.getByRole('button', { name: 'Haftalık değerlendirmeyi aç' }).click();
+  const blockedCard = page.getByTestId('proposal-card').filter({ hasText: EX });
+  await blockedCard.getByTestId('proposal-unverified').waitFor();
+  check((await blockedCard.getByTestId('proposal-after').count()) === 0, 'blocked unverified proposal does not display its stored target');
+  check((await blockedCard.getByTestId('proposal-before').count()) === 0 && !(await blockedCard.innerText()).includes('500'), 'unchecked numbers and positive rationale stay hidden');
+  check(await blockedCard.getByRole('button', { name: `Öneriyi kabul et: ${EX}` }).isDisabled(), 'blocked proposal cannot be accepted');
+  await checkinToday(page);
+  await tab(page, 'Antrenman');
+  // Tab navigation preserves the open weekly screen. Its dataVersion effect
+  // refreshes proposals after check-in; there is no second open button here.
+  await page.getByTestId('weekly-summary').waitFor();
+  const validCard = page.getByTestId('proposal-card').filter({ hasText: EX }).filter({ hasText: 'Karar bekliyor' });
+  await validCard.getByTestId('proposal-after').waitFor();
+  check((await validCard.getByTestId('proposal-after').innerText()).includes('62,5 kg'), 'after check-in only the fresh rule-made proposal is actionable');
+  await validCard.getByRole('checkbox', { name: 'Teknik ve hareket açıklığı iki seansta da aynıydı' }).click();
+  await validCard.getByRole('button', { name: `Öneriyi kabul et: ${EX}` }).click();
   await page.getByText('Öneri kabul edildi').waitFor();
   await page.reload();
   await tab(page, 'Antrenman');

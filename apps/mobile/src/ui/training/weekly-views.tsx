@@ -41,6 +41,26 @@ function ProposalCard({
 }) {
   const [confirmed, setConfirmed] = useState(false);
   const name = exerciseName(p.exerciseId);
+  // Readiness holds prevent deterministic re-evaluation. Stored backup numbers
+  // are audit data, never an actionable prescription until revalidated today.
+  if (p.status === 'pending' && blocked) {
+    return (
+      <Card>
+        <View testID="proposal-card" style={{ gap: 8 }}>
+          <Text style={T.h3}>{name}</Text>
+          <Text style={T.muted}>{STATUS_LABELS[p.status]}</Text>
+          <Text style={[T.body, { color: C.warning }]} testID="proposal-unverified">
+            Bugünkü kontrol eksik veya yük artışını engelliyor. Önerinin yükü ve gerekçesi yeniden doğrulanana kadar
+            gösterilmez; mevcut programın değişmez.
+          </Text>
+          <View style={T.row}>
+            <Button label={`Öneriyi kabul et: ${name}`} disabled onPress={() => onAccept(p.id, false)} />
+            <Button label={`Reddet: ${name}`} variant="secondary" disabled={busy} onPress={() => onDecline(p.id)} />
+          </View>
+        </View>
+      </Card>
+    );
+  }
   const pct = (p.percentHundredths / 100).toLocaleString('tr-TR', { maximumFractionDigits: 2 });
   const reps = `${p.before.sets} set × ${p.before.repMin}–${p.before.repMax} tekrar`;
   return (

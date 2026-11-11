@@ -167,6 +167,20 @@ try {
   const xpAtExport = await xp(page);
   check(xpAtExport.includes('Toplam 70 XP'), `XP before export: ${xpAtExport}`);
   await tab(page, 'Ayarlar');
+  // Inject a synthetic platform failure at the UI boundary. No real user path
+  // is used; the next export restores the original API and still downloads.
+  await page.evaluate(() => {
+    const original = URL.createObjectURL;
+    URL.createObjectURL = () => {
+      URL.createObjectURL = original;
+      throw new Error('file:///synthetic-private/backup.json');
+    };
+  });
+  await page.getByTestId('backup-export').click();
+  const failureNotice = page.getByTestId('backup-message');
+  await failureNotice.getByText('İşlem sırasında hata oluştu. Kayıtların son durumunu kontrol edip tekrar dene.', { exact: true }).waitFor();
+  check(!(await failureNotice.innerText()).includes('synthetic-private'), 'backup failure hides raw platform path and offers retry');
+
   const dl = page.waitForEvent('download');
   await page.getByTestId('backup-export').click();
   const download = await dl;

@@ -1,6 +1,224 @@
 # Current progress
 
 ## Status
+
+## 2026-11-11 / Geri yükleme ve silme sonrası tüm içeriğin doğrulanması
+
+- Uzak ref'ler okundu: en yeni Claude dalı `claude/project-thread-odi8ww` (`cfd122b`),
+  PR çalışma dalı inceleme başlangıcında `abff8cf`. Bağlı Browser aracı hâlâ
+  `Unknown tool browser.js`; Claude'a ileti veya Superpowers canlı kanıtı yok.
+- QA 6'daki geri okuma notu somut olarak doğrulandı: yalnız özet sayıları ve XP
+  karşılaştırılıyordu. İki gerçek depodaki işlem içine hata enjekte edilince değişmiş
+  set yükü/ayarlar/plan iç sırası başarı diye kabul edilebiliyordu; boşaltma sonrası
+  eski hatırlatıcı ayarları kalsa da silme başarı dönebiliyordu. Bu gerçek bir cihaz
+  arızası gözlemi değildir; doğrulama açığını gösteren denetimli hata enjeksiyonudur.
+- Dar düzeltme: beklenen tüm içerik yazımdan önce kanonik anlık metne alınır. İşlem
+  içindeki geri okuma bununla tam karşılaştırılır; farklıysa işlem geri alınır.
+  Yalnız tabloların üst düzey satır sırası ve nesne anahtar sırası önemsizdir. Program
+  gün/hareket sırası, alışkanlıklar, hatırlatıcılar ve diğer iç dizilerin sırası korunur.
+  Varsayılan/null onarımı yok; beklenen veri yazım sırasında değiştirilse bile önceki
+  anlık görüntü korunur. Aynı denetim `deleteAllData` içinde varsayılan ayarları da kapsar.
+- Kalıcı regresyonlar düzeltmeden önce iki depoda dört kırmızı verdi. Sonra değişmiş
+  yük, ayar ve iç hareket sırası reddi; ret sonrası önceki kayıtların aynılığı; ayarları
+  sıfırlamayan silmenin geri alınması; yalnız satır sırası değişince meşru geri yükleme
+  kabulü geçti. Mevcut dışa/içe aktarma ve migration regresyonları da korunuyor.
+- Typecheck, lint, **381/381 test** (20 dosya) ve web export geçti.
+- Son servis commit'i `ac2489d9bd85bcf9819e611f5c07deed14efeef9` için
+  [Actions 42997184234](https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42997184234),
+  iş `130444081328` ham günlükleri okundu: checkout SHA eşleşiyor, 381 test,
+  typecheck, lint, web export ve altı Chromium akışı geçti. Boş kurulumda ve
+  okunamayan depoda sağlam yedeği açık onayla geri yükleme de gerçekten başarılı.
+  Bu sonradan eklenen kanıt kaydı yalnız belgeyi değiştirir; uygulama ağacı aynıdır.
+- Ayrı salt okunur son diff incelemesinde yeni kusur bulunmadı; inceleyici 41/41
+  odaklı testi, typecheck ve lint gerçekten çalıştırdı.
+- Gerçek iPhone, hesap/imza ve Safari test bağlantısı yok; M5 tamam değil. Main'e
+  birleştirme, yayımlama veya ücretli hizmet işlemi yapılmadı.
+
+## 2026-11-11 / C4 düzeltmesinin tam web kabul sonucu
+
+- [Actions 42987597761](https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42987597761),
+  iş `130412398557` tamamlandı. Ham günlüklerde checkout
+  `91515696df7064736d1796e505c435f293ebd0cb`, **375/375 test**, typecheck, lint,
+  web export ve altı Chromium PASS doğrulandı.
+- Yeni M3 denetimi gerçekten geçti: `backup failure hides raw platform path and
+  offers retry`; hemen ardından sürümlü yedek dosyası normal indirildi. Kullanıcı
+  tekrar deneyebiliyor, sentetik özel yol mesajda görünmüyor.
+- Bu kayıt yalnız belgedir; uygulama kodu CI'da test edilen commit ile aynı kaldı.
+  Aşağıdaki yeni C4 web regresyonu için bekleyen ifadeler bu kanıtla sonuçlandı.
+- Gerçek iPhone, imzalama ve canlı Claude/Superpowers erişimi doğrulanmadı.
+  M5 tamam değil; kalan QA kabul maddeleri ve Safari test bağlantısı açık.
+
+## 2026-11-11 / Yedekleme hata metninde dosya yolu gizliliği (C4)
+
+- Uzak ref listesi tekrar okundu: Claude devam dalı `claude/project-thread-odi8ww`
+  hâlâ `cfd122b`; inceleme başlangıcında PR dalı `907d724`.
+- Önceki dosya hazırlama düzeltmesinin CI kanıtı doğrulandı:
+  [42982177139](https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42982177139),
+  iş `130394892542` ham günlükleri checkout `907d72490d94602b739aaa436561436d95316873`,
+  367/367 test, typecheck, lint, web export ve altı Chromium PASS sonucu içeriyor.
+- Bağımsız gizlilik incelemesi C4'ü doğruladı: native paylaşım/okuma hataları, dosya
+  seçici ve paylaşılabilirlik denetimi hataları `BackupPanel.run` üzerinden ham
+  `Error.message` / `String(e)` ile ekranda görünebiliyordu (özel cihaz yolu dahil).
+- Dar düzeltme `ui/backup-errors.ts` sunum sınırıdır. Yalnız `BackupFileError` içinde
+  uygulamanın üç sabit eyleme dönük metni (büyük dosya, okunamayan dosya, paylaşım yok)
+  aynen gösterilir; diğer hatalar ve atılan bilinmeyen değerler sabit Türkçe mesaj olur.
+  Temizlenemeyen geçici kopya uyarısı korunur. Ham hata kaydedilmez veya string'e çevrilmez.
+- Genel hata metni "veriler değişmedi" demez: `afterChange` geri yükleme/silme zaten
+  kaydedildikten sonra hata verebilir. Servisin sabit ret/başarısızlık mesajları korunur.
+- Ham görüntüleme ifadesine karşı sekiz regresyon gerçekten kırmızı görüldü; düzeltme
+  sonrası hepsi yeşil. Sentetik yol, ham payload, string'e dönüşümü hata atan nesne,
+  temizlik uyarısı ve üç bilinen mesaj sınanıyor.
+- Typecheck, lint, **375/375 test** (20 dosya), web export ve `node --check e2e/web-m3.mjs`
+  geçti. M3 web akışı sentetik `createObjectURL` hatası, ham yolun gizlenmesi, genel
+  mesaj ve sonraki normal indirme ile tekrar denemeyi içeriyor. Bu yeni web regresyonu
+  CI'da ayrıca doğrulanmalı; önceki yeşil iş bu yeni arayüzün kanıtı değildir.
+- Ayrı salt okunur son diff incelemesinde yeni kusur yok; inceleyici 21/21 odaklı
+  testi, typecheck, lint ve M3 sözdizimini gerçekten çalıştırdı. Tarayıcı çalıştırmadı.
+- Bağlı Browser aracı yine `Unknown tool browser.js`; Claude'a doğrudan mesaj
+  gönderilmedi, Superpowers canlı kullanım doğrulanmadı. Önceki engel tekrarlanmadı.
+- İmzalı build, gerçek iPhone ve Safari test bağlantısı henüz yok; M5 tamam değil.
+
+## 2026-11-11 / Dosya hazırlama hatasında geçici kopyanın izlenmesi
+
+- Salt okunur bağımsız yaşam döngüsü incelemesi P2 doğruladı: native `createTemp`
+  eski kopyayı silip yenisini oluşturmadan dosya tutamacını döndürmüyordu. Silme veya
+  kısmi oluşturma hatasında çekirdeğin `file` değeri `null` kalıyor, temizlik sonucu
+  yanlışlıkla `true` oluyordu. Kopya kalabildiği hâlde arayüz uyarı vermeyebiliyordu.
+- SDK 58 FileSystem belgesi okundu: `File` var olmayan dosyaya da başvuru tutar;
+  oluşturma ayrı `create` işlemidir. Kaynak: https://docs.expo.dev/versions/v58.0.0/sdk/filesystem/
+- Düzeltme: önce yan etkisiz uygulama-önbelleği tutamacı döndürülür; silme/oluşturma/
+  yazma, çekirdeğin dosyayı izlediği `write` içinde yapılır. Başarısız silmede kalan
+  kopya dürüstçe bildirilir; kısmi oluşturmada temizleme denenir. Kullanıcı kopyasına
+  dokunulmaz, paylaşım hazırlama başarısızsa açılmaz.
+- `tests/native-backup-wrapper.test.ts` gerçek native sarmalayıcıyı sahte Expo IO ile
+  çağırır. Düzeltmeden önce üç testten ikisi gerçekten kırmızıydı: yanlış temizleme
+  bildirimi ve oluşturma hatasından sonra kalan dosya. Üçüncü test normal paylaşım,
+  eski geçici kopyanın değiştirilmesi ve dış kullanıcı kopyasının korunmasıdır.
+- Düzeltmeden sonra typecheck, lint ve **367/367 test** (19 dosya) geçti.
+  Web export da başarılı. Ayrı salt okunur son diff incelemesinde yeni kusur bulunmadı;
+  inceleyici 13/13 odaklı testi, typecheck ve lint gerçekten çalıştırdı.
+  Gerçek Expo dosya sistemi/paylaşım veya iPhone testi değildir.
+- Gizlilik C4 (ham hata metninde dosya yolu) ayrı ve hâlâ açık; bu dar düzeltme onun
+  çözüldüğünü iddia etmez. Yeni web kabulü CI'da ayrıca çalıştırılmalıdır.
+
+## 2026-11-11 / Son öneri–plan düzeltmesinin tam web kabul kanıtı
+
+- Uzak ref'ler kontrol edildi: Claude devam dalı hâlâ `claude/project-thread-odi8ww`
+  (`cfd122b`); düzeltme dalı `codex/backup-recovery-preview` başı `e7176b4`.
+- [GitHub Actions 42975467108](https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42975467108),
+  iş `130373421845` tamamlandı. Ham günlükte checkout SHA
+  `e7176b46ae99a44de0ccf48cf71f3456d3309728` doğrulandı; test edilen ağaç
+  `7c36cc73ea4e9cd1d92c80a5a3946b63e66f166f` yerelde test edilen ağaçla aynı.
+- Temiz CI kurulumu, typecheck, lint, iki depoda **364/364 test**, web export ve altı
+  Chromium akışı başarılı: persistence, training, M2, M3, layout, recovery.
+  Günlükte gizlenen doğrulanmamış hedef, kontrol sonrası taze öneri ve okunamayan
+  depodan açık onayla 10 XP kurtarma denetimleri ayrıca okundu.
+- Bu tur ürün kodu değişmedi; kanıt kaydı güncellendi. Önceki satırlardaki bu commit
+  için "web CI bekliyor" ifadeleri bu kayıtla sonuçlanmıştır; tarihî notlar korunur.
+- Bağlı Browser aracı hâlâ `Unknown tool browser.js`; önceki alternatif tarayıcı
+  gözleminde Claude oturumu giriş istiyordu. Doğrudan mesaj veya Superpowers canlı
+  kullanım doğrulaması yapılmış sayılmaz. Aynı engel kullanıcıya tekrar bildirilmedi.
+- M5 ve 22 gerçek iPhone kontrolü tamamlanmadı. Ses/bildirim/SQLite/paylaşım/arka plan
+  için bu yeşil web işi cihaz kanıtı değildir. Safari test bağlantısı henüz yok.
+- Sıradaki bağımsız kapsam: PROGRESS kalan QA/gizlilik notlarını önem ve meşru geçmiş
+  düzenlemeleri açısından ayır; kanıtlı kusuru dar kapsamda düzelt. Kabul ölçütü 19'daki
+  hareket bazlı eklem ağrısı duraklatması da açık; beta tamamlandı denemez.
+
+## 2026-11-11 / Kabul edilmiş öneri–plan bağlarının bağımsız doğrulaması
+
+- Uzak ref'ler tekrar doğrulandı: en yeni Claude devam dalı `claude/project-thread-odi8ww`
+  (`cfd122b`); PR #1 başı inceleme başlangıcında `b980789`.
+- `b980789` için Actions [42833401274](https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42833401274),
+  iş `129889096508` ham günlükleri okundu. Checkout SHA eşleşiyor: 362 test, tür/lint,
+  web export ve altı Chromium akışı geçti. Gizlenen sahte 500 hedefi, kontrol sonrası taze
+  62,5 hedefi ve okunamayan depodan açık onaylı kurtarma gerçekten çalıştı.
+- Bağımsız salt okunur inceleyici P2 doğruladı: kabul edilmiş önerinin sonuç planı temel
+  plana çevrilip sağlama yeniden hesaplanınca iki depoda da önizleme/içe aktarma kabul
+  ediliyordu. Servis her zaman karşılıklı öneri–sonuç planı ve temel plan–alt plan bağları
+  yazıyor; sonradan elle plan düzenlemek eski değişmez denetim kayıtlarını değiştirmiyor.
+- Dar düzeltme: öneriye bağlı plan kabul kararıyla karşılıklı eşleşmeli; kabul edilmiş
+  önerinin sonuç planı aynı öneriye ve temel planına bağlı olmalı. Geçersiz dosya bütünüyle
+  reddedilir, otomatik onarım yok. Sonuç planının en güncel plan olması şart koşulmaz.
+- Kalıcı regresyon önce iki depoda da kırmızı görüldü. Düzeltmeden sonra beş çapraz bağ
+  bozulması için önizleme ve gerçek içe aktarma reddi, depoda değişiklik olmaması ve daha
+  sonraki meşru plan düzenlemesinin yedeğinin geri yüklenmesi sınanıyor.
+- Son diff ayrı salt okunur incelemeden geçti; yeni kusur bulunmadı. İnceleyici gerçekten
+  77/77 odaklı testi, typecheck ve lint çalıştırdı.
+- Bu son ağaçta typecheck, lint, 18 dosyada **364/364 test** ve web export geçti.
+  Yeni düzeltmenin web CI sonucu ayrıca doğrulanmalı; önceki altı PASS bu ağaca taşınmaz.
+- Bağlı Browser aracı `Unknown tool browser.js`; alternatif bulut tarayıcısında proje
+  Claude giriş sayfasına yönlendi. Oturuma mesaj gönderilmedi, çalışan iş bilinmiyor,
+  Superpowers canlı kullanım kanıtı yok. Önceki engel tekrar bildirilmedi.
+- Main'e veya Claude dalına birleştirme, dağıtım, satın alma, hesap/imza işlemi yapılmadı.
+  22 gerçek cihaz kontrolü BEKLİYOR; M5 tamam değil. Safari'de paylaşılabilir bir test
+  bağlantısı henüz yok; web export oluşturmak telefonda kurulum veya barındırma değildir.
+
+## 2026-11-10 / Son web regresyonunun CI hatası ve dar düzeltmesi
+
+- Gerçek uzak ref listesinde en yeni Claude dalı hâlâ `cfd122b`; PR #1 başı `634adc3`.
+- GitHub Actions `42827699547`, iş `129869224126` ham günlükleri okundu: tür/lint,
+  362 test ve web export geçti. İlk iki web akışı geçti; M2, yeni güvenlik
+  denetimlerini geçtikten sonra satır 211'de olmayan açma düğmesini bekleyerek durdu.
+  Sonraki üç akış bu işte çalışmadı; tüm altı geçti denemez.
+- Kaynak nedeni: sekme değişimi açık haftalık ekranın `mode` durumunu koruyor;
+  kontrol kaydı sonrası `dataVersion` etkisi aynı ekranın önerilerini yeniden okuyor.
+  Test artık ikinci kez açma düğmesine basmak yerine haftalık özeti ve taze
+  öneriyi bekliyor. Gizlenen 500 yükü, kapalı kabul, taze 62,5 kg ve açık onay
+  denetimleri korunuyor; ürün kodu değişmedi.
+- Bu ağaçta `node --check`, typecheck, lint, iki depoda 362/362 test ve web export
+  çalıştırıldı ve geçti. Yeni tam tarayıcı sonucu CI'da doğrulanmayı bekliyor.
+- Browser bağlantısı yine `Unknown tool browser.js`; Claude'a doğrudan ileti yok.
+  Önceden bildirilen engel tekrarlanmadı. Superpowers canlı kullanım doğrulaması yok.
+  M5 gerçek cihaz/imza adımları bekliyor; native test veya dağıtım yapılmadı.
+
+
+## 2026-11-10 / Kontrol engelinde doğrulanmamış yük önizlemesi
+
+- `33043fb` için temiz GitHub Actions işi `42826440910` tamamlandı; ham günlüklerden
+  362 test, tür/lint, web export ve altı PASS akışı doğrulandı. Birleştirme inceleyeni ayrıca
+  75/75 odaklı test ve kurtarma betiğinin sözdizimini çalıştırdı; dar bütünleştirmede kusur yok.
+- Sonraki bağımsız sınır incelemesinde P2 bulundu: geri yüklenmiş önerinin `after.load=500`
+  değeri, yeni gün kontrolü yokken tekrar hesaplanamıyor; öneri `pending` kaldığından
+  arayüz rakamı ve olumlu gerekçeyi gösterebiliyordu. Kabul yolu `readiness-blocked` ile
+  reddediyor, kontrol sonrası `sameNumbers` uyuşmazlığı yakalıyordu; plan değişikliği açığı yok.
+- İki gerçek depoda geçici tanısal test gerçekten çalıştırıldı (2/2): sağlaması yeniden
+  hesaplanmış yedeğin kabulü → ertesi gün kontrolsüz değerlendirme → bekleyen 500 yükü →
+  kabulün reddi. Tanısal ekleme çalıştırma sonunda geri alındı, ürün testine geçirilmedi.
+  Ayrı inceleyen de kaynakta aynı sınırı doğruladı.
+- Dar arayüz düzeltmesi: bugün yeniden doğrulanamayan bekleyen öneri yük/gerekçe göstermiyor;
+  mevcut programın değişmediğini açıklıyor, kabul kapalı ve reddetme yolu korunuyor.
+  Kontrol düzelince mevcut kurallar tekrar çalışır; oyun/XP veya yük reçetesi değiştirilmedi.
+- `web-m2.mjs` sentetik bozuk öneri, kontrolsüz yeni gün, gizlenen yük/kabul engeli ve
+  kontrol sonrası gerçek 62,5 kg önerisinin onayını sınayacak şekilde genişletildi.
+- Bu son UI ağacında 362/362 test, typecheck, lint, web export ve `node --check` geçti.
+  Yeni tarayıcı regresyonu CI'da ayrıca doğrulanmalıdır; önceki yeşil iş bu UI değişikliğine
+  kanıt değildir. iPhone testleri yapılmadı; M5 tamam değil.
+
+
+## 2026-11-10 / Güncel Claude dalıyla bağımsız bütünleştirme
+
+- GitHub dal listesi ve uzak ref'ler doğrulandı: en yeni Claude dalı
+  `claude/project-thread-odi8ww`, `cfd122ba13d1e5d78669fba38f58226844ac0456`.
+- Claude'un yeni haftalık öneri tutarlılığı ve tek paylaşılan depo açma değişiklikleri
+  koddan incelendi; kurtarma düzeltmesi kendi dalında da mevcut. `codex/backup-recovery-preview`
+  dalına alınırken iki kurtarma senaryosu, gerçek bozuk SQLite/IndexedDB regresyonları,
+  okunamayan veri uyarısı, CI ve 22 maddelik cihaz kayıt planı korundu.
+- Birleştirmedeki aynı kapsamlı `goodPath` değişken çakışması giderildi;
+  `node --check e2e/web-recovery.mjs` geçti.
+- Birleşik uygulama ağacında gerçekten çalıştırıldı: 18 dosyada **362/362 test**,
+  `npm run typecheck`, `npm run lint`, `npm run export:web` başarılı.
+  Bu sayı ve derleme web/Node kanıtıdır, iPhone kanıtı değildir.
+- Güncel ağaç için altı tarayıcı akışı henüz doğrulanmadı; önceki `bbe43f7` CI sonucu
+  bu yeni ağaç için yeniden kullanılamaz. CI yeni push ile tekrar çalıştırılacak.
+- Claude raporundaki Superpowers kullanım beyanı depoda görüldü, ancak bağlı Browser
+  yine `Unknown tool browser.js` verdi. Canlı oturum/kullanım bağımsız doğrulanmadı;
+  Claude'a bu tur doğrudan mesaj gönderilmedi. Önceki erişim engeli tekrar bildirilmedi.
+- QA 6'daki sıfır çalışma setli bitmiş seans notu tek başına ret kuralı yapılmadı:
+  `updateSet` bitişten sonra set türünü değiştirmeye izin verir ve ödülü geri almaz.
+  Meşru geçmiş düzenlemesini reddeden bir yedek kuralı eklenmedi.
+- Main'e birleştirme, yayın, ücretli işlem, Expo/Apple kimliği veya imza işlemi yok.
+  M5 gerçek cihaz kaydı hâlâ bekliyor. Aşağıdaki kayıtlar kendi commit/ortamlarına aittir.
+
 M0–M3 web üzerinde çalışıyor ve test edildi. 2026-11-10 bütünlük turu: iki yönlü yedek
 doğrulaması, geçici dosya temizliği, bağımsız gizlilik + QA incelemesi ve bulgularının
 düzeltilmesi, `preview` (günlük kullanım) derleme profili. Native (iPhone) davranışı —
@@ -144,14 +362,132 @@ Kalanların hepsi hesap veya cihaz ister; hiçbiri uydurulmadı:
 - Gözden geçirme 6 (iPhone'da farklı olabilecekler, sınanmadı): geliştirme modunda expo-sqlite
   DevTools aynı bağlantıyı kullanabilir; ROLLBACK da başarısız olursa sonraki işlemler yeniden
   başlatmaya kadar başarısız olur; hiç bitmeyen bir işlem tüm veritabanı erişimini bekletir.
-- QA 6: kabul edilmiş öneri ↔ plan `proposalId` çapraz denetimi yok; sıfır setli ödüllü bitmiş
-  seans kabul ediliyor; bilinmeyen `exerciseId`'li öneri kabul ediliyor; geri okuma yalnız sayı
-  ve XP'yi karşılaştırıyor; dışa aktarma uyarısı 20 MB sınırını söylemiyor; tarihî kayıtlar
+- QA 6: kabul edilmiş öneri ↔ plan çapraz denetimi 2026-11-11 düzeltildi (yukarıda); sıfır setli ödüllü bitmiş
+  seans kabul ediliyor; bilinmeyen `exerciseId`'li öneri kabul ediliyor; geri okuma 2026-11-11 tüm içerik karşılaştırmasına geçti (yukarıda); dışa aktarma uyarısı 20 MB sınırını söylemiyor; tarihî kayıtlar
   güncel kataloglarla doğrulanıyor (altın dosya testi önerildi).
 - QA 5 kalıntısı: gözlenmeyen aralıkta küçük saat geri alma fark edilmez (DECISIONS.md).
-- Gizlilik C3 (cihaz/iCloud yedekleri) ve C4 (hata metninde dosya yolu).
+- Gizlilik C3 (cihaz/iCloud yedekleri) gerçek cihaz doğrulaması bekliyor; C4 hata görüntüleme sınırı 2026-11-11 düzeltildi (yukarıda).
 - Eklem ağrısında hareket bazlı otomatik duraklatma yok (yalnız uyarı ve artış durdurma).
 - Yedek dosyası şifrelenmez (arayüzde yazıyor).
+
+## Önceki bağımsız kontrol kaydı (tarihsel)
+
+## 2026-11-10 / Kurtarma düzeltmesinin ayrı incelemesi
+
+- Uzak ref'ler yeniden doğrulandı: Claude devam dalı `4ec91f4`, kurtarma PR dalı
+  `aa272ae`; daha yeni Claude dalı yok. `aa272ae` ile önceki yerel `26aece7`
+  aynı dosya ağacıdır (`git diff --quiet` temiz).
+- Düzeltmeyi yazmayan ayrı inceleme ajanı `4ec91f4..26aece7` farkını,
+  kabul ölçütlerini, servis/UI, regresyon testleri ve CI izinlerini okudu.
+  Müdahale gerektiren bulgu bildirmedi. Bu dar kurtarma düzeltmesinin ayrı kod
+  incelemesi tamamlandı; genel native kabul veya M5 onayı değildir.
+- İnceleyenin gerçekten çalıştırdığı kontroller: yedek/kurtarma odaklı
+  33/33 test, typecheck ve lint geçti. Tarayıcı akışları tekrar çalıştırılmadı;
+  önceki commit'e ait altı akış kanıtı korunur. Native test yapılmadı.
+- Bağlı tarayıcı yine `Unknown tool browser.js` verdi. Claude'a mesaj
+  gönderilmedi; çalışan iş ve Superpowers oturum kullanımı doğrulanmadı.
+  Aynı erişim engeli için kullanıcıdan yeniden işlem istenmedi.
+- PR çalışma dalında korunur; main'e birleştirme, dağıtım, hesap/imza veya
+  ücretli hizmet işlemi yok. Claude dalına aktarım ve gerçek cihaz kayıtları bekliyor.
+
+Son doğrulama (2026-11-10): `bbe43f7` için GitHub Actions temiz ortamında
+357 test, typecheck, lint, web export ve **altı Chromium kabul akışı GEÇTİ**.
+Kaynak: https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42793877759
+M5 gerçek cihaz kanıtı hâlâ yok; aşağıdaki eski web engeli tarihsel kayıttır.
+
+## 2026-11-10 / CI kanıtı doğrulaması ve M5 test kaydı
+
+- GitHub dal listesi ve gerçek uzak ref'ler yeniden okundu: Claude devam dalı hâlâ
+  `claude/project-thread-odi8ww` (`4ec91f4`); daha yeni Claude dalı bulunmadı.
+  Kurtarma düzeltmesi `codex/backup-recovery-preview` dalında, PR #1 taslak ve açık.
+- Actions run `42793877759`, job `129753911574`: çalıştırılan commit tam olarak
+  `bbe43f7e91e9fa4aee8f840913b0ca10093b144b`. İş adımları ve ham günlükler bağımsız
+  okundu; Claude'un raporu kanıt alınmadı. Temiz `npm ci`, 18 dosya/357 test,
+  typecheck, lint, web export başarılı. Altı PASS satırı: persistence, training,
+  M2, M3, layout, recovery. Son akış bozuk mevcut tablo → bilinmeyen toplamlar
+  uyarısı → açık geri yükleme → yeniden açılışta 10 XP adımlarını gerçekten çalıştırdı.
+- Aynı uygulama ağacı bu kontrolde yerelde yeniden sınandı: `npm test` (357/357),
+  `npm run typecheck`, `npm run lint`, `npm run export:web` başarılı.
+- Kaynakta ağ gönderimi/analiz/kullanıcı verisi log çağrısı taraması eşleşme vermedi;
+  bu OS/ağ trafiği veya gerçek cihaz gizlilik kanıtı değildir.
+- `docs/IPHONE_BETA_CHECKLIST.md` 22 gerçek cihaz akışı ve kanıt alanlarıyla hazırlandı;
+  tümü BEKLİYOR. `preview` internal/Release/developmentClient=false doğrulandı.
+  Build, hesap/imza seçimi ve native test yapılmadı. M5 tamamlandı sayılmaz.
+- Bağlı tarayıcı aracı yine erişilemedi (`Unknown tool browser.js`); Claude'a mesaj
+  gönderilmedi, çalışan işi ve Superpowers oturum erişimi doğrulanmadı.
+- Sonraki somut iş: Claude erişince PR farkını bağımsız inceleyip çalışma dalına aktar;
+  ardından kullanıcının Expo/Apple kimlik ve imzalama seçimiyle gerçek cihaz testlerini
+  başlat. Main'e birleştirme, yayın, satın alma yok.
+
+Son bağımsız kontrol ve dar kapsamlı kurtarma düzeltmesi: aşağıdaki 2026-11-10 inceleme
+bölümü. Claude dalının `4ec91f4` sürümü incelendi; düzeltme ayrı
+`codex/backup-recovery-preview` dalında korunuyor. Claude dalına aktarılmadı.
+
+M0–M3 web üzerinde çalışıyor ve test edildi (M3: dinlenme sayacı saat düzeltmesi, Gelişim
+sekmesi, yedekleme/geri yükleme/silme, sesli okuma, yerel hatırlatıcılar, EAS hazırlığı).
+Native (iPhone) davranışı — SQLite migration 4, bildirimler, sesli okuma, paylaşım/dosya
+seçici dahil — gerçek cihazda SINANMADI.
+
+## 2026-11-10 / Bağımsız kontrol ve okunamayan kayıttan yedekle kurtarma
+
+### Kaynak ve inceleme kapsamı
+- GitHub dal listesi ve Git geçmişi kontrol edildi: Claude'un en ileri devam dalı
+  `claude/project-thread-odi8ww`, incelenen commit `4ec91f4e4a0ac74b0668c91f8c9d838c8e7dbeab`.
+  main'e birleştirme, yayın, satın alma, hesap veya imzalama işlemi yapılmadı.
+- İnceleyen Codex, incelenen Claude kodunun yazarı değildir. Kod, kabul ölçütleri ve
+  testler doğrudan okundu/çalıştırıldı; Claude raporu test kanıtı olarak kullanılmadı.
+- Dört zorunlu slot, görev/XP ve hafta/XP ilişkileri, antrenman bağlantıları, geçici dosya
+  çekirdeği, silme, SQLite işlem kuyruğu ve kurtarma arayüzü incelendi. Uygulama kaynaklarında
+  ağ gönderimi, analiz servisi, istemci sırrı veya kullanıcı verisi loglama çağrısı bulunmadı;
+  bu kaynak incelemesidir, ağ trafiği veya işletim sistemi incelemesi değildir.
+- Native geçici dosya testleri saf çekirdek/sahte dosya sistemindedir. Expo belge seçicisi,
+  paylaşım menüsü ve gerçek önbellek dizini bu kontrolde de cihazda doğrulanmadı.
+
+### Bulgu ve düzeltme
+- Mevcut kayıtlar okunamayınca Ayarlar açılabiliyordu, ancak `previewImport` mevcut
+  deponun tamamını okuyup özetlemek zorundaydı. SQLite'ta bozuk `profile.habit_keys` JSON'u,
+  IndexedDB'de bozuk `ledger` tablosu sağlam yedeğin önizlemesini de engelliyordu.
+- `tests/backup-recovery.test.ts` iki depoda önce BAŞARISIZ çalıştırıldı (JSON okuma ve
+  özetleme hataları). Düzeltmeden sonra iki test de geçti. Gelen dosya önce tam doğrulanır;
+  mevcut özet okunamıyorsa `current: null` olur. Arayüz mevcut sayılar/XP için "bilinmiyor"
+  ve tüm mevcut verilerin değiştirileceği uyarısını gösterir; 0 uydurmaz.
+- Önizleme mevcut kayıtları onarmaz/silmez. Geçersiz gelen dosya reddedilir; açık onaydan
+  sonraki geri yükleme aynı tam doğrulama ve tek işlemde değiştirme yolunu kullanır.
+  Testler bozuk depoya dokunulmadığını ve sağlam yedeğin 10 XP ile geri geldiğini doğrular.
+- Bu düzeltmenin yazarı Codex'tir; ayrıca başka bir kişi/ajan tarafından incelenmedi.
+  Claude ile bağlantı kurulunca bu dar değişiklik ve tarayıcı regresyonu incelenmelidir.
+
+### Gerçek kontroller (`apps/mobile`)
+- İncelenen `4ec91f4`: `npm test` → 17 dosya / 355 test geçti;
+  `npx tsc --noEmit`, `npm run lint`, `npm run export:web` geçti.
+- `npx expo-doctor` → **20/20**; `npx expo install --check` → **Dependencies are up to date**.
+  Bu iki sonuç bağımsız ortamda alındı; önceki ağ hatalarının geçmiş kayıtları değiştirilmedi.
+- Düzeltme: `npx vitest run tests/backup-recovery.test.ts tests/m3-backup.test.ts`
+  → 33 test geçti. `npm run typecheck`, `npm run lint`, `npm run export:web` geçti.
+- Düzeltmeden sonraki tam testin ilk çalışmasında, web derlemesi de sürerken kapsamlı
+  antrenman kombinasyonu testi 5 sn sınırına takıldı (356 geçti, 1 zaman aşımı).
+  Derleme/lint bittikten sonra aynı `npm test`, eşikler değiştirilmeden → **18 dosya / 357 test geçti**.
+- Web akışları GEÇTİ SAYILMADI: kurulu `/usr/bin/chromium` ile geçici test başlatıcısı
+  kullanılarak `npm run test:web` denendi; Chromium uygulamaya ulaşmadan
+  `socket() failed: Operation not permitted` ile kapandı. Yetki gevşetilmedi.
+- `e2e/web-recovery.mjs` sağlam yedek → bozuk mevcut tablo → bilinmeyen mevcut toplamlar
+  → açık onay → geri yükleme → yenilemede 10 XP akışıyla genişletildi.
+  `node --check e2e/web-recovery.mjs` geçti; bu yeni tarayıcı akışı ÇALIŞTIRILAMADI.
+- `git diff --check` temiz. Paketler ve EAS/native yapılandırması değiştirilmedi.
+
+### İletişim ve sonraki somut işler
+- Bağlı Browser aracı kullanılamadı; alternatif tarayıcı Claude giriş ekranına yönlendi.
+  Claude'a bu kontrolde mesaj GÖNDERİLMEDİ, çalışan işin durumu bilinmiyor.
+  Superpowers'ın mevcut kod oturumunda erişimi/kullanımı yeniden doğrulanmadı.
+- Claude'a iletilecek yeni görev: `codex/backup-recovery-preview` farkını incele; kabul
+  edilirse kendi dalına aktar ve altı `test:web` akışını çalıştır (özellikle genişletilen
+  `web-recovery.mjs`). Çalışan bir işi kesme ve önceki görevi yeniden gönderme.
+- `preview` profili statik olarak doğrulandı: internal + developmentClient=false + iOS
+  Release. Gerçek derleme/kurulum yok. Expo proje/hesap kimliği, kullanıcının paket kimliği
+  ve Apple imzası/cihaz kaydı hâlâ kullanıcı kararı gerektiriyor; değer uydurulmadı.
+- M5 TAMAM DEĞİL: SQLite göçü, arka plan/sonlandırma/saat, bildirim izin/teslim/iptal,
+  Türkçe ses/Durdur, Dosyalar/paylaşım ve uçak modunda soğuk açılış gerçek iPhone'da
+  sınanmalı. Web ve node:sqlite sonuçları bunların yerine geçmez. M4 eklenmedi.
 
 ## 2026-11-10 / Sayaç düzeltmesi + M3
 

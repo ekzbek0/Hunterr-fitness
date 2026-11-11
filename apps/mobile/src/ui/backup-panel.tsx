@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { COUNT_LABELS } from '@/domain/backup/summary';
-import { BackupFileError, pickBackupFile, saveBackupFile, sweepBackupTemp, TEMP_LEFT_NOTICE } from '@/platform/backup-file';
+import { pickBackupFile, saveBackupFile, sweepBackupTemp, TEMP_LEFT_NOTICE } from '@/platform/backup-file';
 import type { BackupService, ImportPreview } from '@/services/backup-service';
+import { formatBackupError } from '@/ui/backup-errors';
 import { Button, Card, T } from '@/ui/components';
 import { formatDate } from '@/ui/labels';
 import { C } from '@/ui/theme';
@@ -32,8 +33,7 @@ export function BackupPanel({
     try {
       await fn();
     } catch (e) {
-      const left = e instanceof BackupFileError && !e.tempCopyRemoved ? ` ${TEMP_LEFT_NOTICE}` : '';
-      setMsg({ text: `${e instanceof Error ? e.message : String(e)}${left}`, tone: 'error' });
+      setMsg({ text: formatBackupError(e), tone: 'error' });
     } finally {
       setBusy(false);
     }
@@ -133,12 +133,18 @@ export function BackupPanel({
               ? ` · kayıtlar ${formatDate(preview.backup.firstDate)} – ${formatDate(preview.backup.lastDate)}`
               : ''}
           </Text>
+          {!preview.current && (
+            <Text style={[T.body, { color: C.danger }]} testID="backup-current-unreadable">
+              Mevcut kayıtlar okunamadığı için şu anki kayıt sayıları ve XP bilinmiyor. Geri yükleme, okunamayanlar dahil
+              tüm mevcut kayıtların yerine bu yedeği yazacak. Onaylamadan önce yedekteki tarihleri ve sayıları kontrol et.
+            </Text>
+          )}
           <Text style={T.body} testID="backup-preview-xp">
-            Toplam XP: şimdi {preview.current ? preview.current.totalXp : 'okunamadı'} → geri yüklemeden sonra {preview.backup.totalXp}
+            Toplam XP: şimdi {preview.current?.totalXp ?? 'bilinmiyor'} → geri yüklemeden sonra {preview.backup.totalXp}
           </Text>
           {COUNT_LABELS.map(([key, label]) => (
             <Text key={key} style={T.muted}>
-              {label}: şimdi {preview.current ? preview.current.counts[key] : 'okunamadı'} → sonra {preview.backup.counts[key]}
+              {label}: şimdi {preview.current?.counts[key] ?? 'bilinmiyor'} → sonra {preview.backup.counts[key]}
             </Text>
           ))}
           <Text style={T.muted} testID="backup-preview-reminders">

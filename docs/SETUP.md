@@ -97,9 +97,12 @@ For using the app day to day and for beta testing on your own registered devices
 Use a different bundle ID per profile only if you want both installed side by side;
 with one bundle ID the later install replaces the earlier one (data is kept).
 
-#### Checks that could not be run in the cloud session
-`npx expo-doctor` (2 of 20 checks need `exp.host`) and `npx expo install --check` need
-network access to Expo. Run both on your machine before the first build.
+#### Dependency checks
+On 2026-11-10 the independent review environment completed `npx expo-doctor`
+(20/20) and `npx expo install --check` (dependencies up to date). Earlier Claude
+session network failures remain documented in PROGRESS.md. Run both again in the
+build environment if dependencies/configuration change; an unreachable check is
+not a pass.
 
 #### Real-device checklist (none done yet)
 SQLite migration 4 on existing data; rest timer after background/kill and after setting
@@ -107,6 +110,9 @@ the clock back; notification permission allow and deny; reminder delivery at the
 time and its update after a program change; Turkish voice present/absent; backup through
 the share sheet to Files and import from Files (including a rejected file); delete-all
 removes pending reminders; airplane mode; `preview` build cold start without a dev server.
+Use [IPHONE_BETA_CHECKLIST.md](IPHONE_BETA_CHECKLIST.md) to record the exact tested
+commit/build, steps, expected outcomes and real-device evidence. All device cases
+start as BEKLİYOR; preparing the checklist does not complete M5.
 
 ## Updates and background
 EAS Update requires runtime compatibility. New native dependencies, SDK,

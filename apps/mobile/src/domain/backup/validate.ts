@@ -661,7 +661,7 @@ function checkIntegrity(out: IssueList, d: BackupData) {
   const plans = new Map(d.plans.map((x) => [x.id, x]));
   const cycles = new Map(d.weeklyCycles.map((x) => [x.id, x]));
   const reviews = new Set(d.weeklyReviews.map((x) => x.weeklyCycleId));
-  const proposals = new Set(d.proposals.map((x) => x.id));
+  const proposals = new Map(d.proposals.map((x) => [x.id, x]));
   const profileId = d.profile?.id ?? null;
 
   if (d.trainingProfile && d.trainingProfile.profileId !== profileId) {
@@ -763,7 +763,13 @@ function checkIntegrity(out: IssueList, d: BackupData) {
       if (!parent) ref(`plans[${i}].parentId`, 'kayıtlı olmayan bir plan sürümüne bağlı');
       else if (parent.sequence >= pl.sequence) ref(`plans[${i}].parentId`, 'üst sürüm bu sürümden önce gelmeli');
     }
-    if (pl.proposalId !== null && !proposals.has(pl.proposalId)) ref(`plans[${i}].proposalId`, 'kayıtlı olmayan bir öneriye bağlı');
+    if (pl.proposalId !== null) {
+      const proposal = proposals.get(pl.proposalId);
+      if (!proposal) ref(`plans[${i}].proposalId`, 'kayıtlı olmayan bir öneriye bağlı');
+      else if (proposal.status !== 'accepted' || proposal.resultPlanVersionId !== pl.id) {
+        ref(`plans[${i}].proposalId`, 'öneri bu planı oluşturan kabul kararıyla eşleşmiyor');
+      }
+    }
   });
   d.sessions.forEach((s, i) => {
     if (!days.has(s.taskDayId)) ref(`sessions[${i}].taskDayId`, 'kayıtlı olmayan bir görev gününe bağlı');
@@ -783,8 +789,14 @@ function checkIntegrity(out: IssueList, d: BackupData) {
   d.proposals.forEach((p, i) => {
     if (!cycles.has(p.weeklyCycleId)) ref(`proposals[${i}].weeklyCycleId`, 'kayıtlı olmayan bir haftaya bağlı');
     if (!plans.has(p.planVersionId)) ref(`proposals[${i}].planVersionId`, 'kayıtlı olmayan bir plan sürümüne bağlı');
-    if (p.resultPlanVersionId !== null && !plans.has(p.resultPlanVersionId)) {
-      ref(`proposals[${i}].resultPlanVersionId`, 'kayıtlı olmayan bir plan sürümüne bağlı');
+    if (p.resultPlanVersionId !== null) {
+      const result = plans.get(p.resultPlanVersionId);
+      if (!result) ref(`proposals[${i}].resultPlanVersionId`, 'kayıtlı olmayan bir plan sürümüne bağlı');
+      // Accepted history is immutable. Later manual edits can advance the latest
+      // plan, but cannot change the original result's reciprocal audit links.
+      else if (result.proposalId !== p.id || result.parentId !== p.planVersionId) {
+        ref(`proposals[${i}].resultPlanVersionId`, 'sonuç planı öneriye ve önerinin temel planına karşılıklı bağlı olmalı');
+      }
     }
     p.evidenceSessionIds.forEach((id, j) => {
       if (!sessions.has(id)) ref(`proposals[${i}].evidenceSessionIds[${j}]`, 'kayıtlı olmayan bir antrenman');

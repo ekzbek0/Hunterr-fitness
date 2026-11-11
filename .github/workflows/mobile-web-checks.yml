@@ -1,0 +1,50 @@
+name: Mobile web acceptance
+
+on:
+  push:
+    branches:
+      - codex/backup-recovery-preview
+      - claude/project-thread-odi8ww
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/mobile-web-checks.yml'
+
+# This workflow can read code only. It has no publishing or deployment step.
+permissions:
+  contents: read
+
+jobs:
+  mobile-web:
+    # Standard hosted runners are free for public repositories. Do not run if
+    # repository visibility changes, and never select a larger/paid runner.
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      CI: 'true'
+    steps:
+      - name: Check out the exact tested commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Use Node 24 LTS
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install lockfile dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: SQLite and IndexedDB regressions
+        run: npm test
+      - name: Build web preview
+        run: npm run export:web
+      - name: Install lockfile-matched Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run all six web acceptance flows
+        run: npm run test:web

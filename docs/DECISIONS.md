@@ -210,3 +210,62 @@
 
 Record implementation choices here with reason and validation, including
 task-day travel policy, persistence adapter, versions, and sync conflict policy.
+
+- 2026-11-10 (bağımsız kurtarma incelemesi): Sağlam yedeğin önizlemesi, mevcut bozuk
+  kayıtların okunabilmesine bağlı değildir. Gelen dosya tüm biçim/bütünlük/saat denetimlerinden
+  geçer; mevcut özet okunamıyorsa `current: null` ile "bilinmiyor" gösterilir ve okunamayanlar
+  dahil tüm kayıtların değişeceği açıkça yazılır. Otomatik onarım, sessiz sıfırlama veya
+  tahmini XP yoktur. Açık geri yükleme onayı ve işlem içi doğrulama korunur. Gerekçe:
+  `4ec91f4` sürümünde bozuk SQLite JSON'u veya IndexedDB tablosu sağlam yedeği de önizlemeye
+  ulaştırmıyordu. `tests/backup-recovery.test.ts` her iki depoda önce başarısız, sonra geçti;
+  genişletilmiş `e2e/web-recovery.mjs` henüz tarayıcıda çalıştırılamadı. Düzeltme ayrı
+  `codex/backup-recovery-preview` dalında; gerçek iPhone kanıtı değildir.
+
+- 2026-11-10 (web kabul ortamı): Yerel Chromium süreç izni nedeniyle başlayamadığından,
+  `.github/workflows/mobile-web-checks.yml` aynı kilit dosyasıyla temiz kurulum, tür/lint,
+  iki depo testleri, web export ve altı gerçek Chromium akışını sırayla çalıştırır.
+  Yalnız çalışma dallarındaki uygulama/workflow değişikliklerinde tetiklenir. İzinler
+  `contents: read`, checkout kimlik bilgileri kalıcı tutulmaz; secrets, dağıtım, imzalama
+  veya yayımlama adımı yoktur. Resmî action'lar tam commit SHA ile sabittir.
+  Public repo için standart `ubuntu-24.04` runner kullanılır; repo private olursa iş atlanır.
+  Dayanak: [GitHub workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
+  Gerçek sonuçlar ve test edilen commit PROGRESS.md'de kaydedilir; bu web kanıtıdır,
+  native kabul kanıtı değildir.
+
+- 2026-11-10 (engellenen öneri görünümü): Bugünkü kontrol yük artışını engelliyorsa
+  bekleyen önerinin saklanan rakam/gerekçesi güvenilir güncel öneri olarak gösterilmez.
+  Kabul zaten servis ve UI'da kapalıdır; şimdi sayılar da yeniden doğrulama yapılana kadar
+  gizlenir. Bekleyen denetim kaydı silinmez veya bayat diye uydurulmaz; kontrol sonrası
+  mevcut belirleyici kurallar öneriyi yeniden değerlendirir. Gerekçe: değiştirilmiş yedekteki
+  hedef readiness engelinde tekrar hesaplanamıyor, ama arayüzde öneri gibi görünüyordu.
+  İki depo tanısal tekrar ve ayrı kaynak incelemesi bulguyu doğruladı; web regresyonu eklendi.
+
+- 2026-11-11 (öneri/plan yedek bütünlüğü): Kabul edilmiş öneri ile oluşturduğu değişmez
+  plan sürümü karşılıklı bağlanır (`resultPlanVersionId` / `proposalId`); sonuç planının
+  `parentId` değeri önerinin `planVersionId` değeri olmalı. Plan üzerinde bir `proposalId`
+  varsa yalnız o planı oluşturan kabul kararını gösterebilir. Sonradan elle düzenlenmiş
+  yeni bir plan sürümü eskisini geçersiz kılmaz; en son plan şartı konmaz. Sağlaması doğru
+  ama çapraz ilişkileri çelişkili dosya yazım öncesi tamamen reddedilir. İki depo regresyonu
+  hem ret sonrası verinin değişmediğini hem sonraki meşru düzenleme yedeğini doğrular.
+
+- 2026-11-11 (geçici dosya hazırlama hatası): Native paylaşımda dosya tutamacı, dosya
+  sistemi değişmeden önce çekirdeğe teslim edilir. Var olan geçici kopyayı silme,
+  oluşturma ve yazma bu tutamacın izlenen `write` işlemi içindedir; böylece hazırlama
+  hataları da temizleme denemesine girer. Hata sırasında temizliği doğrulanamayan
+  kopya için `tempCopyRemoved: false` korunur. Mock Expo sarmalayıcı testleri gerçek
+  iPhone kanıtı değildir; SDK 58 FileSystem belgesiyle API sözleşmesi kontrol edildi.
+
+- 2026-11-11 (yedekleme hata sunumu / C4): Platform/depodan atılan ham hata metni ve
+  bilinmeyen değerler ekranda string'e çevrilmez. `BackupFileError` için yalnız tam
+  eşleşen üç sabit kullanıcı mesajı geçer; diğerleri genel Türkçe hata olur. Temizlik
+  belirsizliği ayrı `tempCopyRemoved` bayrağıyla korunur. Genel mesaj veri değişmedi
+  iddiası taşımaz: geri yükleme/silme sonrası ekran yenileme hatası yazımı geri almaz.
+  Bu değişiklik hata kaydı/telemetri eklemez ve dosyanın kendisini değiştirmez.
+
+- 2026-11-11 (işlem içi geri okuma): Geri yükleme ve tümünü silme, sayım/XP özeti
+  yerine beklenen her alanı geri okunan içerikle karşılaştırır. Beklenen anlık içerik
+  yazımdan önce alınır; tabloların satır sırası ve nesne anahtar sırası normalize edilir,
+  iç dizilerin sırası ve tüm alan değerleri aynen korunur. Fark işlem içinde hata verir
+  ve yazım geri alınır. Gerekçe: aynı sayıda kayıt/XP ile hatalı yük/ayar veya silme
+  sonrasında kalan etkin hatırlatıcı ayarları eski özet denetiminden geçebiliyordu.
+  İki depo hata enjeksiyonu, rollback ve satır sırası uyumluluğu test edildi.
