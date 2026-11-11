@@ -2,6 +2,35 @@
 
 ## Status
 
+## 2026-11-11 / Kabul edilmiş öneri–plan bağlarının bağımsız doğrulaması
+
+- Uzak ref'ler tekrar doğrulandı: en yeni Claude devam dalı `claude/project-thread-odi8ww`
+  (`cfd122b`); PR #1 başı inceleme başlangıcında `b980789`.
+- `b980789` için Actions [42833401274](https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42833401274),
+  iş `129889096508` ham günlükleri okundu. Checkout SHA eşleşiyor: 362 test, tür/lint,
+  web export ve altı Chromium akışı geçti. Gizlenen sahte 500 hedefi, kontrol sonrası taze
+  62,5 hedefi ve okunamayan depodan açık onaylı kurtarma gerçekten çalıştı.
+- Bağımsız salt okunur inceleyici P2 doğruladı: kabul edilmiş önerinin sonuç planı temel
+  plana çevrilip sağlama yeniden hesaplanınca iki depoda da önizleme/içe aktarma kabul
+  ediliyordu. Servis her zaman karşılıklı öneri–sonuç planı ve temel plan–alt plan bağları
+  yazıyor; sonradan elle plan düzenlemek eski değişmez denetim kayıtlarını değiştirmiyor.
+- Dar düzeltme: öneriye bağlı plan kabul kararıyla karşılıklı eşleşmeli; kabul edilmiş
+  önerinin sonuç planı aynı öneriye ve temel planına bağlı olmalı. Geçersiz dosya bütünüyle
+  reddedilir, otomatik onarım yok. Sonuç planının en güncel plan olması şart koşulmaz.
+- Kalıcı regresyon önce iki depoda da kırmızı görüldü. Düzeltmeden sonra beş çapraz bağ
+  bozulması için önizleme ve gerçek içe aktarma reddi, depoda değişiklik olmaması ve daha
+  sonraki meşru plan düzenlemesinin yedeğinin geri yüklenmesi sınanıyor.
+- Son diff ayrı salt okunur incelemeden geçti; yeni kusur bulunmadı. İnceleyici gerçekten
+  77/77 odaklı testi, typecheck ve lint çalıştırdı.
+- Bu son ağaçta typecheck, lint, 18 dosyada **364/364 test** ve web export geçti.
+  Yeni düzeltmenin web CI sonucu ayrıca doğrulanmalı; önceki altı PASS bu ağaca taşınmaz.
+- Bağlı Browser aracı `Unknown tool browser.js`; alternatif bulut tarayıcısında proje
+  Claude giriş sayfasına yönlendi. Oturuma mesaj gönderilmedi, çalışan iş bilinmiyor,
+  Superpowers canlı kullanım kanıtı yok. Önceki engel tekrar bildirilmedi.
+- Main'e veya Claude dalına birleştirme, dağıtım, satın alma, hesap/imza işlemi yapılmadı.
+  22 gerçek cihaz kontrolü BEKLİYOR; M5 tamam değil. Safari'de paylaşılabilir bir test
+  bağlantısı henüz yok; web export oluşturmak telefonda kurulum veya barındırma değildir.
+
 ## 2026-11-10 / Son web regresyonunun CI hatası ve dar düzeltmesi
 
 - Gerçek uzak ref listesinde en yeni Claude dalı hâlâ `cfd122b`; PR #1 başı `634adc3`.
@@ -211,7 +240,7 @@ Kalanların hepsi hesap veya cihaz ister; hiçbiri uydurulmadı:
 - Gözden geçirme 6 (iPhone'da farklı olabilecekler, sınanmadı): geliştirme modunda expo-sqlite
   DevTools aynı bağlantıyı kullanabilir; ROLLBACK da başarısız olursa sonraki işlemler yeniden
   başlatmaya kadar başarısız olur; hiç bitmeyen bir işlem tüm veritabanı erişimini bekletir.
-- QA 6: kabul edilmiş öneri ↔ plan `proposalId` çapraz denetimi yok; sıfır setli ödüllü bitmiş
+- QA 6: kabul edilmiş öneri ↔ plan çapraz denetimi 2026-11-11 düzeltildi (yukarıda); sıfır setli ödüllü bitmiş
   seans kabul ediliyor; bilinmeyen `exerciseId`'li öneri kabul ediliyor; geri okuma yalnız sayı
   ve XP'yi karşılaştırıyor; dışa aktarma uyarısı 20 MB sınırını söylemiyor; tarihî kayıtlar
   güncel kataloglarla doğrulanıyor (altın dosya testi önerildi).

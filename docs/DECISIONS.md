@@ -239,3 +239,11 @@ task-day travel policy, persistence adapter, versions, and sync conflict policy.
   mevcut belirleyici kurallar öneriyi yeniden değerlendirir. Gerekçe: değiştirilmiş yedekteki
   hedef readiness engelinde tekrar hesaplanamıyor, ama arayüzde öneri gibi görünüyordu.
   İki depo tanısal tekrar ve ayrı kaynak incelemesi bulguyu doğruladı; web regresyonu eklendi.
+
+- 2026-11-11 (öneri/plan yedek bütünlüğü): Kabul edilmiş öneri ile oluşturduğu değişmez
+  plan sürümü karşılıklı bağlanır (`resultPlanVersionId` / `proposalId`); sonuç planının
+  `parentId` değeri önerinin `planVersionId` değeri olmalı. Plan üzerinde bir `proposalId`
+  varsa yalnız o planı oluşturan kabul kararını gösterebilir. Sonradan elle düzenlenmiş
+  yeni bir plan sürümü eskisini geçersiz kılmaz; en son plan şartı konmaz. Sağlaması doğru
+  ama çapraz ilişkileri çelişkili dosya yazım öncesi tamamen reddedilir. İki depo regresyonu
+  hem ret sonrası verinin değişmediğini hem sonraki meşru düzenleme yedeğini doğrular.

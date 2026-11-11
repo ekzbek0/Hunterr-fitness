@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { AvciRepository } from '@/data/types';
+import type { AvciRepository, BackupData } from '@/data/types';
 import { backupChecksum } from '@/domain/backup/format';
 import type { Program } from '@/domain/training/program';
 import { DRAFT_TRAINING_PROFILE } from '@/domain/training/profile';
@@ -235,6 +235,46 @@ describe.each(backends)('M1 fixes + M2 ($name)', (backend) => {
     // Decided proposals cannot be decided again; XP unchanged by plan changes.
     expect((await service.acceptProposal(p.id, { techniqueConfirmed: true })).status).toBe('rejected');
     expect((await service.loadToday()).progress.totalXp).toBe(10 * 3 + 60 * 2);
+  });
+
+  it('REGRESSION: backup proposal and result-plan links must be reciprocal; rejection leaves both stores unchanged', async () => {
+    await twoGoodSessions();
+    const p = (await benchProposal())!;
+    const accepted = ok(await service.acceptProposal(p.id, { techniqueConfirmed: true }));
+    const backup = new BackupService(repo, clock);
+    const original = (await backup.exportBackup()).json;
+    expect((await backup.previewImport(original)).ok).toBe(true);
+    const before = await repo.transaction((tx) => tx.dumpAll());
+    const mutations: ((d: BackupData) => void)[] = [
+      (d) => { d.proposals.find((x) => x.id === p.id)!.resultPlanVersionId = p.planVersionId; },
+      (d) => { d.plans.find((x) => x.id === accepted.plan.id)!.proposalId = null; },
+      (d) => { d.plans.find((x) => x.id === p.planVersionId)!.proposalId = p.id; },
+      (d) => { d.plans.find((x) => x.id === accepted.plan.id)!.parentId = null; },
+      (d) => {
+        const proposal = d.proposals.find((x) => x.id === p.id)!;
+        proposal.status = 'declined';
+        proposal.resultPlanVersionId = null;
+      },
+    ];
+    for (const mutate of mutations) {
+      const env = JSON.parse(original);
+      mutate(env.data);
+      env.checksum = backupChecksum(env.data);
+      const json = JSON.stringify(env);
+      const preview = await backup.previewImport(json);
+      expect(preview.ok).toBe(false);
+      if (!preview.ok) expect(preview.errors.some((e) => e.code === 'reference')).toBe(true);
+      expect((await backup.importBackup(json)).status).toBe('rejected');
+      expect(await repo.transaction((tx) => tx.dumpAll())).toEqual(before);
+    }
+    // A later ordinary edit preserves the old audit link and must remain restorable.
+    const edited = structuredClone(accepted.plan.program);
+    edited.days[0].exercises.reverse();
+    ok(await service.acceptProgram({ baseVersionId: accepted.plan.id, program: edited, source: 'user-edit' }));
+    const later = (await backup.exportBackup()).json;
+    expect((await backup.previewImport(later)).ok).toBe(true);
+    expect((await backup.importBackup(later)).status).toBe('restored');
+    expect((await repo.transaction((tx) => tx.getProposal(p.id)))!.resultPlanVersionId).toBe(accepted.plan.id);
   });
 
   it('REGRESSION: a stored proposal whose target no longer equals the freshly computed one is stale, never applied', async () => {
