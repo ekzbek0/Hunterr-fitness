@@ -2,6 +2,29 @@
 
 ## Status
 
+## 2026-11-11 / Son öneri–plan düzeltmesinin tam web kabul kanıtı
+
+- Uzak ref'ler kontrol edildi: Claude devam dalı hâlâ `claude/project-thread-odi8ww`
+  (`cfd122b`); düzeltme dalı `codex/backup-recovery-preview` başı `e7176b4`.
+- [GitHub Actions 42975467108](https://github.com/ekzbek0/Hunterr-fitness/actions/runs/42975467108),
+  iş `130373421845` tamamlandı. Ham günlükte checkout SHA
+  `e7176b46ae99a44de0ccf48cf71f3456d3309728` doğrulandı; test edilen ağaç
+  `7c36cc73ea4e9cd1d92c80a5a3946b63e66f166f` yerelde test edilen ağaçla aynı.
+- Temiz CI kurulumu, typecheck, lint, iki depoda **364/364 test**, web export ve altı
+  Chromium akışı başarılı: persistence, training, M2, M3, layout, recovery.
+  Günlükte gizlenen doğrulanmamış hedef, kontrol sonrası taze öneri ve okunamayan
+  depodan açık onayla 10 XP kurtarma denetimleri ayrıca okundu.
+- Bu tur ürün kodu değişmedi; kanıt kaydı güncellendi. Önceki satırlardaki bu commit
+  için "web CI bekliyor" ifadeleri bu kayıtla sonuçlanmıştır; tarihî notlar korunur.
+- Bağlı Browser aracı hâlâ `Unknown tool browser.js`; önceki alternatif tarayıcı
+  gözleminde Claude oturumu giriş istiyordu. Doğrudan mesaj veya Superpowers canlı
+  kullanım doğrulaması yapılmış sayılmaz. Aynı engel kullanıcıya tekrar bildirilmedi.
+- M5 ve 22 gerçek iPhone kontrolü tamamlanmadı. Ses/bildirim/SQLite/paylaşım/arka plan
+  için bu yeşil web işi cihaz kanıtı değildir. Safari test bağlantısı henüz yok.
+- Sıradaki bağımsız kapsam: PROGRESS kalan QA/gizlilik notlarını önem ve meşru geçmiş
+  düzenlemeleri açısından ayır; kanıtlı kusuru dar kapsamda düzelt. Kabul ölçütü 19'daki
+  hareket bazlı eklem ağrısı duraklatması da açık; beta tamamlandı denemez.
+
 ## 2026-11-11 / Kabul edilmiş öneri–plan bağlarının bağımsız doğrulaması
 
 - Uzak ref'ler tekrar doğrulandı: en yeni Claude devam dalı `claude/project-thread-odi8ww`
